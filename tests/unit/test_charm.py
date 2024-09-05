@@ -3,6 +3,7 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+from ops import ActiveStatus
 from pytest import fixture
 from scenario import Context, State
 
@@ -14,7 +15,7 @@ class TestLegoOperatorCharm:
     def context(self):
         self.ctx = Context(LegoOperatorCharm)
 
-    def test_given_not_leader_when_update_status_then_status_is_blocked(self):
+    def test_given_collect_unit_status_then_status_is_active(self):
         state = State(leader=False)
-        self.ctx.run("collect-unit-status", state)
-        assert 1 == 1
+        out = self.ctx.run("collect-unit-status", state)
+        assert out.unit_status == ActiveStatus()
