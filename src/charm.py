@@ -13,11 +13,10 @@ https://juju.is/docs/sdk/create-a-minimal-kubernetes-charm
 """
 
 import logging
-from typing import cast
 
 import ops
+from ops import ActiveStatus
 
-# Log messages can be retrieved using juju debug-log
 logger = logging.getLogger(__name__)
 
 VALID_LOG_LEVELS = ["info", "debug", "warning", "error", "critical"]
@@ -28,6 +27,10 @@ class LegoOperatorCharm(ops.CharmBase):
 
     def __init__(self, framework: ops.Framework):
         super().__init__(framework)
+        self.framework.observe(self.on.collect_unit_status, self._on_collect_unit_status)
+
+    def _on_collect_unit_status(self, event: ops.CollectStatusEvent):
+        event.add_status(ActiveStatus())
 
 
 if __name__ == "__main__":  # pragma: nocover

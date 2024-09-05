@@ -1,0 +1,6 @@
+ops
+cryptography
+cosl
+pylego
+pydantic
+rpds-py==0.18.0

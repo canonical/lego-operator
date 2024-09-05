@@ -7,23 +7,21 @@ import logging
 from pathlib import Path
 
 import pytest
-import yaml
 from pytest_operator.plugin import OpsTest
 
 logger = logging.getLogger(__name__)
 
-METADATA = yaml.safe_load(Path("./charmcraft.yaml").read_text())
-APP_NAME = METADATA["name"]
+APP_NAME = "lego-operator"
 
 
 @pytest.mark.abort_on_fail
-async def test_build_and_deploy(ops_test: OpsTest):
+async def test_build_and_deploy(ops_test: OpsTest, request: pytest.FixtureRequest):
     """Build the charm-under-test and deploy it together with related charms.
 
     Assert on the unit status before any relations/configurations take place.
     """
     # Build and deploy charm from local source folder
-    charm = await ops_test.build_charm(".")
+    charm = Path(request.config.getoption("--charm_path")).resolve()
 
     # Deploy the charm and wait for active/idle status
     await asyncio.gather(
