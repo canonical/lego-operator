@@ -2,7 +2,6 @@
 # Copyright 2024 Ubuntu
 # See LICENSE file for licensing details.
 
-import asyncio
 import logging
 from pathlib import Path
 
@@ -20,13 +19,38 @@ async def test_build_and_deploy(ops_test: OpsTest, request: pytest.FixtureReques
 
     Assert on the unit status before any relations/configurations take place.
     """
+    assert ops_test.model
     # Build and deploy charm from local source folder
-    charm = Path(request.config.getoption("--charm_path")).resolve()
+    charm = Path(request.config.getoption("--charm_path")).resolve()  # type: ignore
 
-    # Deploy the charm and wait for active/idle status
-    await asyncio.gather(
-        ops_test.model.deploy(charm, application_name=APP_NAME),
-        ops_test.model.wait_for_idle(
-            apps=[APP_NAME], status="active", raise_on_blocked=True, timeout=1000
-        ),
+    await ops_test.model.deploy(
+        entity_url=charm,
+        application_name=APP_NAME,
+        config={
+            "email": "example@gmail.com",
+            "server": "https://acme-staging-v02.api.letsencrypt.org/directory",
+            "plugin": "httpreq",
+        },
+        series="jammy",
     )
+
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="blocked",
+        raise_on_error=True,
+        timeout=1000,
+    )
+    secret = await ops_test.model.add_secret(
+        "plugin-credentials", data_args=["username=me", "apikey=ak"]
+    )
+    await ops_test.model.grant_secret(secret_name="plugin-credentials", application=APP_NAME)
+    await ops_test.model.applications[APP_NAME].set_config(  # type: ignore
+        {"plugin-config-secret-id": secret.split(":")[-1]}
+    )
+    await ops_test.model.wait_for_idle(
+        apps=[APP_NAME],
+        status="active",
+        raise_on_error=True,
+        timeout=1000,
+    )
+    assert ops_test.model.applications[APP_NAME].units[0].workload_status == "active"  # type: ignore

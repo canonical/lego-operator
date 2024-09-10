@@ -64,7 +64,7 @@ config:
     plugin:
       type: string
       description: The DNS plugin to use with LEGO. You can choose from a list of supported plugins documented on the [LEGO website](https://go-acme.github.io/lego/dns/).
-    plugin-config-secret:
+    plugin-config-secret-id:
       type: string
       description: >
         The secret id of the secret that contains all of the configuration options required to get a certificate.
