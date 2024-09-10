@@ -13,6 +13,7 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     generate_csr,
     generate_private_key,
 )
+from ops import ActiveStatus
 from pylego import LEGOError, LEGOResponse
 from pylego.pylego import Metadata
 from pytest import fixture
@@ -58,7 +59,7 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
@@ -66,11 +67,12 @@ class TestLegoOperatorCharmConfigure:
                 "plugin-config-secret-id": "1",
             },
             relations=[
-                Relation(relation_id=1, endpoint=CERTIFICATES_RELATION_NAME),
+                Relation(endpoint=CERTIFICATES_RELATION_NAME),
             ],
+            unit_status=ActiveStatus(),  # type: ignore
         )
 
-        self.ctx.run("update-status", state)
+        self.ctx.run(self.ctx.on.update_status(), state)
         mock_pylego.assert_called_with(
             email="example@email.com",
             server="https://acme-v02.api.letsencrypt.org/directory",
@@ -105,7 +107,7 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
@@ -113,11 +115,12 @@ class TestLegoOperatorCharmConfigure:
                 "plugin-config-secret-id": "1",
             },
             relations=[
-                Relation(relation_id=1, endpoint=CERTIFICATES_RELATION_NAME),
+                Relation(endpoint=CERTIFICATES_RELATION_NAME),
             ],
+            unit_status=ActiveStatus(),  # type: ignore
         )
 
-        self.ctx.run("update-status", state)
+        self.ctx.run(self.ctx.on.update_status(), state)
         mock_pylego.assert_called_with(
             email="example@email.com",
             server="https://acme-v02.api.letsencrypt.org/directory",
@@ -163,19 +166,18 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin": "example",
                 "plugin-config-secret-id": "1",
             },
-            relations=[
-                Relation(relation_id=1, endpoint=CERTIFICATES_RELATION_NAME),
-            ],
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
         )
 
-        self.ctx.run("update-status", state)
+        self.ctx.run(self.ctx.on.update_status(), state)
 
         mock_pylego.assert_called_with(
             email="example@email.com",
@@ -196,19 +198,18 @@ class TestLegoOperatorCharmConfigure:
     ):
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin": "example",
                 "plugin-config-secret-id": "1",
             },
-            relations=[
-                Relation(relation_id=1, endpoint=CERTIFICATES_RELATION_NAME),
-            ],
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
         )
 
-        self.ctx.run("update-status", state)
+        self.ctx.run(self.ctx.on.update_status(), state)
         mock_add_certificates.assert_not_called()
 
     @patch(f"{CERT_TRANSFER_LIB_PATH}.CertificateTransferProvides.add_certificates")
@@ -236,7 +237,7 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
@@ -244,11 +245,12 @@ class TestLegoOperatorCharmConfigure:
                 "plugin-config-secret-id": "1",
             },
             relations=[
-                Relation(relation_id=1, endpoint=CERTIFICATES_RELATION_NAME),
-                Relation(relation_id=2, endpoint=CA_TRANSFER_RELATION_NAME),
+                Relation(id=1, endpoint=CERTIFICATES_RELATION_NAME),
+                Relation(id=2, endpoint=CA_TRANSFER_RELATION_NAME),
             ],
+            unit_status=ActiveStatus(),  # type: ignore
         )
 
-        self.ctx.run("update-status", state)
+        self.ctx.run(self.ctx.on.update_status(), state)
 
         mock_add_certificates.assert_called_with({str(ca)})

@@ -78,7 +78,7 @@ ops==2.16.0
     # via
     #   -c requirements.txt
     #   ops-scenario
-ops-scenario==6.1.6
+ops-scenario==7.0.1
     # via -r test-requirements.in
 packaging==24.1
     # via

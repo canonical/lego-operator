@@ -30,7 +30,7 @@ class TestLegoOperatorCharmCollectStatus:
 
     def test_given_not_leader_when_update_status_then_status_is_blocked(self):
         state = State(leader=False)
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus(
             "this charm does not scale, only the leader unit manages certificates."
         )
@@ -42,7 +42,7 @@ class TestLegoOperatorCharmCollectStatus:
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("email address was not provided")
 
     def test_given_server_not_provided_when_update_config_then_status_is_blocked(self):
@@ -50,7 +50,7 @@ class TestLegoOperatorCharmCollectStatus:
             leader=True,
             config={"email": "banana@gmail.com", "server": ""},
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("acme server was not provided")
 
     def test_given_secret_id_not_provided_when_update_config_then_status_is_blocked(self):
@@ -61,26 +61,26 @@ class TestLegoOperatorCharmCollectStatus:
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("plugin configuration secret was not provided")
 
     def test_given_plugin_not_provided_when_update_config_then_status_is_blocked(self):
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"wrong-key": "wrong-value"}})],
+            secrets=[Secret({"wrong-key": "wrong-value"}, id="1")],
             config={
                 "email": "banana@gmail.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin-config-secret-id": "1",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("plugin was not provided")
 
     def test_given_invalid_email_when_update_config_then_status_is_blocked(self):
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "invalid email",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
@@ -88,13 +88,13 @@ class TestLegoOperatorCharmCollectStatus:
                 "plugin-config-secret-id": "1",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("invalid email address")
 
     def test_given_invalid_server_when_update_config_then_status_is_blocked(self):
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "Invalid ACME server",
@@ -102,26 +102,26 @@ class TestLegoOperatorCharmCollectStatus:
                 "plugin-config-secret-id": "1",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("invalid ACME server")
 
     def test_given_invalid_plugin_config_when_update_status_then_status_is_blocked(self):
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"wrong-api-key": "apikey123"}})],
+            secrets=[Secret({"wrong-api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin-config-secret-id": "1",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("plugin was not provided")
 
     def test_given_valid_specific_config_when_update_status_then_status_is_active(self):
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
@@ -129,7 +129,7 @@ class TestLegoOperatorCharmCollectStatus:
                 "plugin-config-secret-id": "1",
             },
         )
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == ActiveStatus("0/0 certificate requests are fulfilled")
 
     @patch("charm.run_lego_command")
@@ -166,7 +166,7 @@ class TestLegoOperatorCharmCollectStatus:
 
         state = State(
             leader=True,
-            secrets=[Secret(id="1", contents={0: {"api-key": "apikey123"}})],
+            secrets=[Secret({"api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
@@ -174,11 +174,11 @@ class TestLegoOperatorCharmCollectStatus:
                 "plugin-config-secret-id": "1",
             },
             relations=[
-                Relation(relation_id=1, endpoint=CERTIFICATES_RELATION_NAME),
+                Relation(endpoint=CERTIFICATES_RELATION_NAME),
             ],
         )
 
-        out = self.ctx.run("collect-unit-status", state)
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == ActiveStatus(
             "1/2 certificate requests are fulfilled. please monitor logs for any errors"
         )
