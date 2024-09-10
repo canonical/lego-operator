@@ -98,9 +98,11 @@ class LegoCharm(CharmBase):
             )
             for csr in certificate_requests
         }
-        with self.maintenance_status("processing certificate requests"):
-            for certificate_request, assigned_certificates in certificate_pair_map.items():
-                if not assigned_certificates:
+        for certificate_request, assigned_certificates in certificate_pair_map.items():
+            if not assigned_certificates:
+                with self.maintenance_status(
+                    f"processing certificate request for relation {certificate_request.certificate_signing_request.common_name}"
+                ):
                     self._generate_signed_certificate(
                         csr=certificate_request.certificate_signing_request,
                         relation_id=certificate_request.relation_id,
@@ -118,8 +120,6 @@ class LegoCharm(CharmBase):
 
     def _generate_signed_certificate(self, csr: CertificateSigningRequest, relation_id: int):
         """Generate signed certificate from the ACME provider."""
-        logger.info("generating certificate for domain %s", csr.common_name)
-        logger.info(run_lego_command)
         try:
             response = run_lego_command(
                 email=self._email or "",
@@ -147,6 +147,7 @@ class LegoCharm(CharmBase):
                 relation_id=relation_id,
             ),
         )
+        logger.info("generated certificate for domain %s", response.metadata.domain)
 
     def _get_certificate_fulfillment_status(self) -> str:
         """Return the status message reflecting how many certificate requests are still pending."""
