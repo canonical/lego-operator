@@ -27,6 +27,8 @@ from ops.framework import EventBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from pylego import LEGOError, run_lego_command
 
+import plugin_configs
+
 logger = logging.getLogger(__name__)
 
 CERTIFICATES_RELATION_NAME = "certificates"
@@ -71,6 +73,9 @@ class LegoCharm(CharmBase):
         if err := self._validate_charm_config_options():
             event.add_status(BlockedStatus(err))
             return
+        if err := self._validate_plugin_config_options():
+            event.add_status(BlockedStatus(err))
+            return
         event.add_status(ActiveStatus(self._get_certificate_fulfillment_status()))
 
     def _configure(self, event: EventBase) -> None:
@@ -79,7 +84,10 @@ class LegoCharm(CharmBase):
             logger.error("only the leader unit can handle certificate requests")
             return
         if err := self._validate_charm_config_options():
-            logger.error(err)
+            logger.error("charm config validation failed: %s", err)
+            return
+        if err := self._validate_plugin_config_options():
+            logger.error("plugin config validation failed: %s", err)
             return
         self._configure_certificates()
         self._configure_ca_certificates()
@@ -182,6 +190,19 @@ class LegoCharm(CharmBase):
         if not _plugin_is_valid(self._plugin):
             return "invalid plugin"
         return ""
+
+    def _validate_plugin_config_options(self) -> str:
+        """Validate the config options for the specific chosen plugins.
+
+        Returns:
+            str: Error message if invalid, otherwise an empty string.
+        """
+        try:
+            plugin_validator = getattr(plugin_configs, self._plugin)
+        except AttributeError:
+            logger.warning("this plugin's config options are not validated by the charm.")
+            return ""
+        return plugin_validator.validate(self._plugin_config)
 
     @contextmanager
     def maintenance_status(self, message: str):

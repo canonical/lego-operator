@@ -59,11 +59,13 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
             relations=[
@@ -77,8 +79,8 @@ class TestLegoOperatorCharmConfigure:
             email="example@email.com",
             server="https://acme-v02.api.letsencrypt.org/directory",
             csr=str(csr).encode(),
-            env={"API_KEY": "apikey123"},
-            plugin="example",
+            env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
+            plugin="namecheap",
         )
         mock_set_relation_certificate.assert_called_with(
             provider_certificate=ProviderCertificate(
@@ -107,11 +109,13 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
             relations=[
@@ -125,8 +129,8 @@ class TestLegoOperatorCharmConfigure:
             email="example@email.com",
             server="https://acme-v02.api.letsencrypt.org/directory",
             csr=str(csr).encode(),
-            env={"API_KEY": "apikey123"},
-            plugin="example",
+            env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
+            plugin="namecheap",
         )
         assert not mock_set_relation_certificate.called
 
@@ -166,11 +170,13 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
             relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
@@ -184,12 +190,13 @@ class TestLegoOperatorCharmConfigure:
             server="https://acme-v02.api.letsencrypt.org/directory",
             csr=str(csr).encode(),
             env={
-                "API_KEY": "apikey123",
+                "NAMECHEAP_API_KEY": "apikey123",
+                "NAMECHEAP_API_USER": "a",
                 "HTTP_PROXY": "Random proxy",
                 "HTTPS_PROXY": "Random https proxy",
                 "NO_PROXY": "No proxy",
             },
-            plugin="example",
+            plugin="namecheap",
         )
 
     @patch(f"{CERT_TRANSFER_LIB_PATH}.CertificateTransferProvides.add_certificates")
@@ -198,11 +205,13 @@ class TestLegoOperatorCharmConfigure:
     ):
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
             relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
@@ -237,11 +246,13 @@ class TestLegoOperatorCharmConfigure:
 
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
             relations=[

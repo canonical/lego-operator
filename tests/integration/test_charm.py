@@ -29,7 +29,7 @@ async def test_build_and_deploy(ops_test: OpsTest, request: pytest.FixtureReques
         config={
             "email": "example@gmail.com",
             "server": "https://acme-staging-v02.api.letsencrypt.org/directory",
-            "plugin": "httpreq",
+            "plugin": "namecheap",
         },
         series="jammy",
     )
@@ -41,7 +41,7 @@ async def test_build_and_deploy(ops_test: OpsTest, request: pytest.FixtureReques
         timeout=1000,
     )
     secret = await ops_test.model.add_secret(
-        "plugin-credentials", data_args=["username=me", "apikey=ak"]
+        "plugin-credentials", data_args=["namecheap-api-key=key1", "namecheap-api-user=me"]
     )
     await ops_test.model.grant_secret(secret_name="plugin-credentials", application=APP_NAME)
     await ops_test.model.applications[APP_NAME].set_config(  # type: ignore

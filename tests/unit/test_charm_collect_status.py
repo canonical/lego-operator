@@ -105,7 +105,7 @@ class TestLegoOperatorCharmCollectStatus:
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("invalid ACME server")
 
-    def test_given_invalid_plugin_config_when_update_status_then_status_is_blocked(self):
+    def test_given_no_plugin_name_when_update_status_then_status_is_blocked(self):
         state = State(
             leader=True,
             secrets=[Secret({"wrong-api-key": "apikey123"}, id="1")],
@@ -118,14 +118,32 @@ class TestLegoOperatorCharmCollectStatus:
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == BlockedStatus("plugin was not provided")
 
-    def test_given_valid_specific_config_when_update_status_then_status_is_active(self):
+    def test_given_invalid_plugin_config_when_update_status_then_status_is_blocked(self):
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[Secret({"wrong-api-key": "apikey123"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == BlockedStatus(
+            "namecheap-api-key and namecheap-api-user must be set"
+        )
+
+    def test_given_valid_plugin_config_when_update_status_then_status_is_active(self):
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
         )
@@ -166,11 +184,11 @@ class TestLegoOperatorCharmCollectStatus:
 
         state = State(
             leader=True,
-            secrets=[Secret({"api-key": "apikey123"}, id="1")],
+            secrets=[Secret({"namecheap-api-key": "key", "namecheap-api-user": "a"}, id="1")],
             config={
                 "email": "example@email.com",
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
-                "plugin": "example",
+                "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
             },
             relations=[
