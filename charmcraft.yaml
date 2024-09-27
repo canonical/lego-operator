@@ -19,7 +19,7 @@ links:
     - https://github.com/canonical/lego-operator
   issues:
     - https://github.com/canonical/lego-operator/issues
-  # documentation: https://discourse.charmhub.io/t/lego-operator-docs-index/12514
+  documentation: https://discourse.charmhub.io/t/lego-docs-index/15658
 
 
 provides:
