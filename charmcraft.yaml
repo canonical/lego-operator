@@ -63,13 +63,13 @@ config:
       default: "https://acme-v02.api.letsencrypt.org/directory"
     plugin:
       type: string
-      description: The DNS plugin to use with LEGO. You can choose from a list of supported plugins documented on the [LEGO website](https://go-acme.github.io/lego/dns/).
+      description: The DNS plugin to use with LEGO. You can choose from a list of supported plugins documented on the [LEGO website](https://go-acme.github.io/lego/dns).
     plugin-config-secret-id:
       type: string
       description: >
         The secret id of the secret that contains all of the configuration options required to get a certificate.
         The dictionary inside the secret should be key-value pairs that map directly to the options required by the plugin.
         All keys are expected to be in lowercase with dashes instead of underscores.
-        You can find the required options for your chosen plugin in the [LEGO documentation](https://go-acme.github.io/lego/dns/).
+        You can find the required options for your chosen plugin in the [LEGO documentation](https://go-acme.github.io/lego/dns).
         For example, the `route53` plugin requires a `secret-access-key` and `access-key-id` to be set.
       
