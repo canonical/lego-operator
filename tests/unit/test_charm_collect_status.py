@@ -3,11 +3,12 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+from datetime import timedelta
 from unittest.mock import Mock, patch
 
 from charms.tls_certificates_interface.v4.tls_certificates import (
     ProviderCertificate,
-    RequirerCSR,
+    RequirerCertificateRequest,
     generate_ca,
     generate_certificate,
     generate_csr,
@@ -164,13 +165,17 @@ class TestLegoOperatorCharmCollectStatus:
         csr_2 = generate_csr(csr_pk_2, "bar.com")
 
         issuer_pk = generate_private_key()
-        issuer = generate_ca(issuer_pk, common_name="ca", validity=365)
-        cert = generate_certificate(csr_1, issuer, issuer_pk, 365)
+        issuer = generate_ca(issuer_pk, common_name="ca", validity=timedelta(days=365))
+        cert = generate_certificate(csr_1, issuer, issuer_pk, timedelta(days=365))
         chain = [cert, issuer]
 
         mock_get_certificate_requests.return_value = [
-            RequirerCSR(relation_id=1, certificate_signing_request=csr_1, is_ca=False),
-            RequirerCSR(relation_id=1, certificate_signing_request=csr_2, is_ca=False),
+            RequirerCertificateRequest(
+                relation_id=1, certificate_signing_request=csr_1, is_ca=False
+            ),
+            RequirerCertificateRequest(
+                relation_id=1, certificate_signing_request=csr_2, is_ca=False
+            ),
         ]
         mock_get_provider_certificates.return_value = [
             ProviderCertificate(
