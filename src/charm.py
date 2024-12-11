@@ -180,7 +180,7 @@ class LegoCharm(CharmBase):
         if not self._server:
             return "acme server was not provided"
         if not self._plugin_config:
-            return "plugin configuration secret was not provided"
+            return "plugin configuration secret is not available"
         if not self._plugin:
             return "plugin was not provided"
         if not _email_is_valid(self._email):
@@ -255,7 +255,10 @@ class LegoCharm(CharmBase):
                 return {}
             plugin_config_secret: Secret = self.model.get_secret(id=plugin_config_secret_id)
             plugin_config = plugin_config_secret.get_content(refresh=True)
-        except (SecretNotFoundError, ModelError):
+        except SecretNotFoundError:
+            return {}
+        except ModelError as e:
+            logger.warning("unable to access the secret: %s", e)
             return {}
         return {key.upper().replace("-", "_"): value for key, value in plugin_config.items()}
 

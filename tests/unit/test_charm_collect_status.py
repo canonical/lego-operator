@@ -63,7 +63,7 @@ class TestLegoOperatorCharmCollectStatus:
             },
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
-        assert out.unit_status == BlockedStatus("plugin configuration secret was not provided")
+        assert out.unit_status == BlockedStatus("plugin configuration secret is not available")
 
     def test_given_plugin_not_provided_when_update_config_then_status_is_blocked(self):
         state = State(
