@@ -4,7 +4,7 @@
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
 from datetime import timedelta
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from charms.tls_certificates_interface.v4.tls_certificates import (
     ProviderCertificate,
@@ -156,7 +156,10 @@ class TestLegoOperatorCharmCollectStatus:
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificates")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     def test_given_valid_config_and_pending_requests_when_update_status_then_status_is_active(
-        self, mock_get_certificate_requests, mock_get_provider_certificates, mock_pylego
+        self,
+        mock_get_certificate_requests: MagicMock,
+        mock_get_provider_certificates: MagicMock,
+        mock_pylego: MagicMock,
     ):
         csr_pk_1 = generate_private_key()
         csr_1 = generate_csr(csr_pk_1, "foo.com")

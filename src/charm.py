@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from contextlib import contextmanager
-from typing import Dict
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 from charms.certificate_transfer_interface.v1.certificate_transfer import (
@@ -41,7 +41,7 @@ class LegoCharm(CharmBase):
     This charm implements the tls_certificates interface as a provider.
     """
 
-    def __init__(self, *args):
+    def __init__(self, *args: Any):
         super().__init__(*args)
         self._logging = LogForwarder(self, relation_name="logging")
         self.tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
