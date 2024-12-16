@@ -56,7 +56,7 @@ class TestLegoOperatorCharmConfigure:
         mock_pylego.return_value = LEGOResponse(
             csr=str(csr),
             private_key=str(generate_private_key()),
-            certificate=str(cert),
+            certificate=f"{str(cert)}\n{str(issuer)}",
             issuer_certificate=str(issuer),
             metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
         )
@@ -170,7 +170,7 @@ class TestLegoOperatorCharmConfigure:
         mock_pylego.return_value = LEGOResponse(
             csr=str(csr),
             private_key=str(generate_private_key()),
-            certificate=str(cert),
+            certificate=f"{str(cert)}\n{str(issuer)}",
             issuer_certificate=str(issuer),
             metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
         )

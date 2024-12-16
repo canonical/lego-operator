@@ -21,6 +21,8 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     ProviderCertificate,
     TLSCertificatesProvidesV4,
 )
+from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from ops import ModelError, Secret, SecretNotFoundError, main
 from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import EventBase
@@ -143,9 +145,10 @@ class LegoCharm(CharmBase):
                 e,
             )
             return
+        end_certificate = self._get_end_certificate(response.certificate)
         self.tls_certificates.set_relation_certificate(
             provider_certificate=ProviderCertificate(
-                certificate=Certificate.from_string(response.certificate),
+                certificate=Certificate.from_string(end_certificate),
                 certificate_signing_request=CertificateSigningRequest.from_string(response.csr),
                 ca=Certificate.from_string(response.issuer_certificate),
                 chain=[
@@ -156,6 +159,12 @@ class LegoCharm(CharmBase):
             ),
         )
         logger.info("generated certificate for domain %s", response.metadata.domain)
+
+    def _get_end_certificate(self, cert: str) -> str:
+        """Get the end certificate from the ACME provider."""
+        certs = x509.load_pem_x509_certificates(cert.encode())
+        first_cert = certs[0].public_bytes(encoding=serialization.Encoding.PEM)
+        return first_cert.decode()
 
     def _get_certificate_fulfillment_status(self) -> str:
         """Return the status message reflecting how many certificate requests are still pending."""
