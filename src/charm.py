@@ -153,7 +153,9 @@ class LegoCharm(CharmBase):
                 ca=Certificate.from_string(response.issuer_certificate),
                 chain=[
                     Certificate.from_string(cert)
-                    for cert in [response.certificate, response.issuer_certificate]
+                    for cert in _get_chain_from_certificate_bundle(
+                        response.certificate, response.issuer_certificate
+                    )
                 ],
                 relation_id=relation_id,
             ),
@@ -320,6 +322,23 @@ def _server_is_valid(server: str) -> bool:
     if not all([urlparts.scheme, urlparts.netloc]):
         return False
     return True
+
+
+def _get_chain_from_certificate_bundle(cert: str, issuer: str | None) -> list[str]:
+    """Get the chain from certificate bundle and add the issuer if it's not present."""
+    certs = x509.load_pem_x509_certificates(cert.encode())
+    if issuer:
+        issuer_cert = x509.load_pem_x509_certificate(issuer.encode())
+        issuer_in_chain = any(
+            existing_cert.public_bytes(encoding=serialization.Encoding.PEM)
+            == issuer_cert.public_bytes(encoding=serialization.Encoding.PEM)
+            for existing_cert in certs
+        )
+
+        if not issuer_in_chain:
+            certs.append(issuer_cert)
+
+    return [cert.public_bytes(encoding=serialization.Encoding.PEM).decode() for cert in certs]
 
 
 if __name__ == "__main__":  # pragma: nocover
