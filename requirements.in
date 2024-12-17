@@ -3,4 +3,4 @@ cryptography
 cosl
 pylego
 pydantic
-rpds-py==0.18.0
+rpds-py==0.21.0
