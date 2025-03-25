@@ -116,7 +116,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 3
+LIBPATCH = 4
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +438,9 @@ class CertificateTransferRequires(Object):
         Returns:
             None
         """
+        if not self.model.unit.is_leader():
+            logger.debug("Only leader unit sets the version number in the app databag")
+            return
         databag = event.relation.data[self.model.app]
         RequirerApplicationData().dump(databag, False)
 
