@@ -1,0 +1,85 @@
+# Copyright 2024 Canonical Ltd.
+# See LICENSE file for licensing details.
+
+name: lego
+
+
+description: |
+  LEGO operator implementing the provider side of the `tls-certificates`
+  interface to get signed certificates from the `Let's Encrypt` ACME server
+  using the DNS-01 challenge and a DNS provider of your choice.
+summary: |
+  LEGO operator implementing the provider side of the `tls-certificates`
+  interface to get signed certificates from the `Let's Encrypt` ACME server
+  using the DNS-01 challenge.
+links:
+  website:
+    - https://charmhub.io/lego
+  source:
+    - https://github.com/canonical/lego-operator
+  issues:
+    - https://github.com/canonical/lego-operator/issues
+  documentation: https://discourse.charmhub.io/t/lego-docs-index/15658
+
+
+provides:
+  certificates:
+    interface: tls-certificates
+  send-ca-cert:
+    interface: certificate_transfer
+
+requires:
+  logging:
+    interface: loki_push_api
+    limit: 1
+    optional: true
+
+type: "charm"
+bases:
+  - build-on:
+      - name: "ubuntu"
+        channel: "22.04"
+    run-on:
+      - name: "ubuntu"
+        channel: "22.04"
+
+parts:
+  charm:
+    source: .
+    plugin: charm
+    charm-requirements:
+      - requirements.txt
+    build-packages:
+      - libffi-dev
+      - libssl-dev
+      - pkg-config
+    build-snaps:
+      - astral-uv
+      - go/1.23/stable
+      - rustup
+    override-build: |
+      rustup default stable
+      uv export --frozen --no-dev -o requirements.txt
+      craftctl default
+
+config:
+  options:
+    email:
+      type: string
+      description: Account email address to receive notifications from Let's Encrypt.
+    server:
+      type: string
+      description: Certificate authority ACME server
+      default: "https://acme-v02.api.letsencrypt.org/directory"
+    plugin:
+      type: string
+      description: The DNS plugin to use with LEGO. You can choose from a list of supported plugins documented on the [LEGO website](https://go-acme.github.io/lego/dns).
+    plugin-config-secret-id:
+      type: string
+      description: >
+        The secret id of the secret that contains all of the configuration options required to get a certificate.
+        The dictionary inside the secret should be key-value pairs that map directly to the options required by the plugin.
+        All keys are expected to be in lowercase with dashes instead of underscores.
+        You can find the required options for your chosen plugin in the [LEGO documentation](https://go-acme.github.io/lego/dns).
+        For example, the `route53` plugin requires a `secret-access-key` and `access-key-id` to be set.
+      
