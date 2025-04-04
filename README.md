@@ -1,7 +1,7 @@
 # lego-operator
 
 Charmhub package name: lego
-More information: https://charmhub.io/lego-operator
+More information: https://charmhub.io/lego
 
 A charm that provides TLS Certificates from a Let's Encrypt server and distributes them via the tls-certificates interface.
 

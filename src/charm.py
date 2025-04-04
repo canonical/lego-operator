@@ -46,7 +46,7 @@ class LegoCharm(CharmBase):
     def __init__(self, *args: Any):
         super().__init__(*args)
         self._logging = LogForwarder(self, relation_name="logging")
-        self.tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
+        self._tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
         self.cert_transfer = CertificateTransferProvides(self, CA_TRANSFER_RELATION_NAME)
 
         [
@@ -96,8 +96,8 @@ class LegoCharm(CharmBase):
 
     def _configure_certificates(self):
         """Attempt to fulfill all certificate requests."""
-        certificate_requests = self.tls_certificates.get_certificate_requests()
-        provided_certificates = self.tls_certificates.get_provider_certificates()
+        certificate_requests = self._tls_certificates.get_certificate_requests()
+        provided_certificates = self._tls_certificates.get_provider_certificates()
         certificate_pair_map = {
             csr: list(
                 filter(
@@ -124,7 +124,7 @@ class LegoCharm(CharmBase):
             self.cert_transfer.add_certificates(
                 {
                     str(provider_certificate.ca)
-                    for provider_certificate in self.tls_certificates.get_provider_certificates()
+                    for provider_certificate in self._tls_certificates.get_provider_certificates()
                 }
             )
 
@@ -146,7 +146,7 @@ class LegoCharm(CharmBase):
             )
             return
         end_certificate = self._get_end_certificate(response.certificate)
-        self.tls_certificates.set_relation_certificate(
+        self._tls_certificates.set_relation_certificate(
             provider_certificate=ProviderCertificate(
                 certificate=Certificate.from_string(end_certificate),
                 certificate_signing_request=CertificateSigningRequest.from_string(response.csr),
@@ -171,9 +171,9 @@ class LegoCharm(CharmBase):
     def _get_certificate_fulfillment_status(self) -> str:
         """Return the status message reflecting how many certificate requests are still pending."""
         outstanding_requests_num = len(
-            self.tls_certificates.get_outstanding_certificate_requests()
+            self._tls_certificates.get_outstanding_certificate_requests()
         )
-        total_requests_num = len(self.tls_certificates.get_certificate_requests())
+        total_requests_num = len(self._tls_certificates.get_certificate_requests())
         fulfilled_certs = total_requests_num - outstanding_requests_num
         message = f"{fulfilled_certs}/{total_requests_num} certificate requests are fulfilled"
         if fulfilled_certs != total_requests_num:
