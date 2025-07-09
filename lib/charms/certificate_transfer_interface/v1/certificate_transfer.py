@@ -116,7 +116,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 6
+LIBPATCH = 7
 
 logger = logging.getLogger(__name__)
 
@@ -317,7 +317,7 @@ class CertificateTransferProvides(Object):
             return
         relations = self._get_relevant_relations(relation_id)
         if not relations:
-            logger.error(
+            logger.warning(
                 "At least 1 matching relation ID not found with the relation name '%s'",
                 self.relationship_name,
             )
@@ -344,7 +344,7 @@ class CertificateTransferProvides(Object):
             return
         relations = self._get_relevant_relations(relation_id)
         if not relations:
-            logger.error(
+            logger.warning(
                 "At least 1 matching relation ID not found with the relation name '%s'",
                 self.relationship_name,
             )
@@ -374,7 +374,7 @@ class CertificateTransferProvides(Object):
             return
         relations = self._get_relevant_relations(relation_id)
         if not relations:
-            logger.error(
+            logger.warning(
                 "At least 1 matching relation ID not found with the relation name '%s'",
                 self.relationship_name,
             )
