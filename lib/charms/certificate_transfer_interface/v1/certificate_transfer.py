@@ -124,7 +124,7 @@ LIBAPI = 1
 
 # Increment this PATCH version before using `charmcraft publish-lib` or reset
 # to 0 if you are raising the major API version
-LIBPATCH = 9
+LIBPATCH = 10
 
 logger = logging.getLogger(__name__)
 
@@ -626,8 +626,8 @@ class CertificateTransferRequires(Object):
         try:
             databag = relation.data[relation.app]
             certificates = ProviderApplicationData().load(databag).certificates
-            if not certificates:
-                databag = relation.data[relation.units.pop()]
+            if not certificates and relation.units:
+                databag = relation.data.get(relation.units.pop(), {})
                 return {cert.ca for cert in ProviderUnitDataV0().load(databag).certificates}
             return certificates
         except DataValidationError as e:
