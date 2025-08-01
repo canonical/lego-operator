@@ -133,7 +133,7 @@ class LegoCharm(CharmBase):
     def _generate_signed_certificate(self, csr: CertificateSigningRequest, relation_id: int):
         """Generate signed certificate from the ACME provider."""
         try:
-            private_key = self._get_or_create_private_key()
+            private_key = self._get_or_create_acme_account_private_key()
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
@@ -219,7 +219,7 @@ class LegoCharm(CharmBase):
             return ""
         return plugin_validator.validate(self._plugin_config)
 
-    def _get_or_create_private_key(self) -> str:
+    def _get_or_create_acme_account_private_key(self) -> str:
         """Get the private key if it exists, create it and store it if it doesn't.
 
         Returns:
@@ -230,6 +230,7 @@ class LegoCharm(CharmBase):
         private_key, email = self._get_account_acme_account_details()
         if private_key and email == self._email:
             return private_key
+        logger.info("ACME account details not valid, generating new private key")
         private_key = str(generate_private_key())
         self._store_account_acme_account_details(private_key, self._email)
         return private_key
