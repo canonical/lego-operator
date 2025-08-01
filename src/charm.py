@@ -20,6 +20,7 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     CertificateSigningRequest,
     ProviderCertificate,
     TLSCertificatesProvidesV4,
+    generate_private_key,
 )
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 CERTIFICATES_RELATION_NAME = "certificates"
 CA_TRANSFER_RELATION_NAME = "send-ca-cert"
+ACCOUNT_SECRET_LABEL = "acme-account-details"
 
 
 class LegoCharm(CharmBase):
@@ -131,8 +133,10 @@ class LegoCharm(CharmBase):
     def _generate_signed_certificate(self, csr: CertificateSigningRequest, relation_id: int):
         """Generate signed certificate from the ACME provider."""
         try:
+            private_key = self._get_or_create_acme_account_private_key()
             response = run_lego_command(
                 email=self._email or "",
+                private_key=private_key,
                 server=self._server or "",
                 csr=csr.raw.encode(),
                 env=self._plugin_config | self._app_environment,
@@ -214,6 +218,52 @@ class LegoCharm(CharmBase):
             logger.warning("this plugin's config options are not validated by the charm.")
             return ""
         return plugin_validator.validate(self._plugin_config)
+
+    def _get_or_create_acme_account_private_key(self) -> str:
+        """Get the private key if it exists, create it and store it if it doesn't.
+
+        Returns:
+            str: The private key.
+        """
+        if not self._email:
+            raise ValueError("email is required to store the private key")
+        private_key, email = self._get_account_acme_account_details()
+        if private_key and email == self._email:
+            return private_key
+        logger.info("ACME account details not valid, generating new private key")
+        private_key = str(generate_private_key())
+        self._store_account_acme_account_details(private_key, self._email)
+        return private_key
+
+    def _store_account_acme_account_details(self, private_key: str, email: str) -> None:
+        """Store the private key in a juju secret.
+
+        Args:
+            private_key: The private key to store.
+            email: The email to store.
+        """
+        try:
+            secret = self.model.get_secret(label=ACCOUNT_SECRET_LABEL)
+            secret.set_content({"private-key": private_key, "email": email})
+            secret.get_content(refresh=True)
+        except SecretNotFoundError:
+            self.unit.add_secret(
+                content={"private-key": private_key, "email": email},
+                label=ACCOUNT_SECRET_LABEL,
+            )
+
+    def _get_account_acme_account_details(self) -> tuple[str | None, str | None]:
+        """Get the private key and email if they exist.
+
+        Returns:
+            tuple[str | None, str | None]: The private key and email if they exist, None otherwise.
+        """
+        try:
+            secret = self.model.get_secret(label=ACCOUNT_SECRET_LABEL)
+            content = secret.get_content(refresh=True)
+            return content["private-key"], content["email"]
+        except SecretNotFoundError:
+            return None, None
 
     @contextmanager
     def maintenance_status(self, message: str):

@@ -36,12 +36,16 @@ class TestLegoOperatorCharmConfigure:
     @patch("charm.run_lego_command")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate")
+    @patch("charm.generate_private_key")
     def test_given_cmd_when_certificate_creation_request_then_certificate_is_set_in_relation(
         self,
+        mock_generate_private_key: MagicMock,
         mock_set_relation_certificate: MagicMock,
         mock_get_outstanding_certificate_requests: MagicMock,
         mock_pylego: MagicMock,
     ):
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
         csr_pk = generate_private_key()
         csr = generate_csr(csr_pk, "foo.com")
         issuer_pk = generate_private_key()
@@ -81,6 +85,7 @@ class TestLegoOperatorCharmConfigure:
         self.ctx.run(self.ctx.on.update_status(), state)
         mock_pylego.assert_called_with(
             email="example@email.com",
+            private_key=str(mock_account_pk),
             server="https://acme-v02.api.letsencrypt.org/directory",
             csr=str(csr).encode(),
             env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
@@ -99,12 +104,16 @@ class TestLegoOperatorCharmConfigure:
     @patch("charm.run_lego_command")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate")
+    @patch("charm.generate_private_key")
     def test_given_cmd_execution_fails_when_certificate_creation_request_then_request_fails(
         self,
+        mock_generate_private_key: MagicMock,
         mock_set_relation_certificate: MagicMock,
         mock_get_certificate_requests: MagicMock,
         mock_pylego: MagicMock,
     ):
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
         csr_pk = generate_private_key()
         csr = generate_csr(csr_pk, "foo.com")
 
@@ -134,6 +143,7 @@ class TestLegoOperatorCharmConfigure:
         self.ctx.run(self.ctx.on.update_status(), state)
         mock_pylego.assert_called_with(
             email="example@email.com",
+            private_key=str(mock_account_pk),
             server="https://acme-v02.api.letsencrypt.org/directory",
             csr=str(csr).encode(),
             env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
@@ -152,11 +162,15 @@ class TestLegoOperatorCharmConfigure:
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate", new=Mock)
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     @patch("charm.run_lego_command")
+    @patch("charm.generate_private_key")
     def test_given_cmd_when_app_environment_variables_set_then_command_executed_with_environment_variables(  # noqa: E501
         self,
+        mock_generate_private_key: MagicMock,
         mock_pylego: MagicMock,
         mock_get_certificate_requests: MagicMock,
     ):
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
         csr_pk = generate_private_key()
         csr = generate_csr(csr_pk, "foo.com")
         issuer_pk = generate_private_key()
@@ -194,6 +208,7 @@ class TestLegoOperatorCharmConfigure:
 
         mock_pylego.assert_called_with(
             email="example@email.com",
+            private_key=str(mock_account_pk),
             server="https://acme-v02.api.letsencrypt.org/directory",
             csr=str(csr).encode(),
             env={
@@ -272,3 +287,108 @@ class TestLegoOperatorCharmConfigure:
         self.ctx.run(self.ctx.on.update_status(), state)
 
         mock_add_certificates.assert_called_with({str(ca)})
+
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate", new=Mock)
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch("charm.run_lego_command")
+    @patch("charm.generate_private_key")
+    def test_given_valid_config_when_configure_then_private_key_is_generated_and_stored(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_pylego: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+    ):
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "foo.com")
+        issuer_pk = generate_private_key()
+        issuer = generate_ca(issuer_pk, common_name="ca", validity=timedelta(days=365))
+        cert = generate_certificate(csr, issuer, issuer_pk, timedelta(days=365))
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=True)
+        ]
+
+        mock_pylego.return_value = LEGOResponse(
+            csr=str(csr),
+            private_key=str(generate_private_key()),
+            certificate=f"{str(cert)}\n{str(issuer)}",
+            issuer_certificate=str(issuer),
+            metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
+        )
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        state_out = self.ctx.run(self.ctx.on.update_status(), state)
+        assert "acme-account-details" in [s.label for s in state_out.secrets]
+        assert {"private-key": str(mock_account_pk), "email": "example@email.com"} in [
+            s.tracked_content for s in state_out.secrets
+        ]
+
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate", new=Mock)
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch("charm.run_lego_command")
+    @patch("charm.generate_private_key")
+    def test_given_email_changed_when_configure_then_private_key_is_generated_and_stored(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_pylego: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+    ):
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "foo.com")
+        issuer_pk = generate_private_key()
+        issuer = generate_ca(issuer_pk, common_name="ca", validity=timedelta(days=365))
+        cert = generate_certificate(csr, issuer, issuer_pk, timedelta(days=365))
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=True)
+        ]
+
+        mock_pylego.return_value = LEGOResponse(
+            csr=str(csr),
+            private_key=str(generate_private_key()),
+            certificate=f"{str(cert)}\n{str(issuer)}",
+            issuer_certificate=str(issuer),
+            metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
+        )
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1"),
+                Secret(
+                    {"private-key": str(mock_account_pk), "email": "example@email.com"}, id="2"
+                ),
+            ],
+            config={
+                "email": "different@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        state_out = self.ctx.run(self.ctx.on.update_status(), state)
+        assert "acme-account-details" in [s.label for s in state_out.secrets]
+        assert {"private-key": str(mock_account_pk), "email": "different@email.com"} in [
+            s.tracked_content for s in state_out.secrets
+        ]
