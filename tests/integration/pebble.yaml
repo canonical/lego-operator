@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pebble
+  namespace: model
+  labels:
+    app: pebble
+spec:
+  containers:
+    - name: pebble
+      image: ghcr.io/letsencrypt/pebble
+      #args:
+      # - "-dnsserver"
+      # - "pebble-challtestsrv:8053"
+      env:
+        - name: PEBBLE_VA_NOSLEEP
+          value: "1"  # don't sleep a random time between everything
+        - name: PEBBLE_VA_ALWAYS_VALID
+          value: "1"  # don't even check that the challenge was completed properly
+        - name: PEBBLE_WFE_NONCEREJECT
+          value: "0"  # don't randomly reject requests sometimes
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pebble
+  namespace: model
+spec:
+  selector:
+    app: pebble
+  ports:
+    - port: 14000
+      targetPort: 14000
