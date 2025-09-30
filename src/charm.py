@@ -8,7 +8,7 @@ import logging
 import os
 import re
 from contextlib import contextmanager
-from typing import Any, Dict, Iterable, Set
+from typing import Any, Dict, Set
 from urllib.parse import urlparse
 
 from charms.certificate_transfer_interface.v1.certificate_transfer import (
@@ -105,11 +105,11 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             logger.error("plugin config validation failed: %s", err)
             return
-        self._configure_acme_receive_ca_certificates()
+        self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
         self._configure_send_ca_certificates()
 
-    def _configure_acme_receive_ca_certificates(self):
+    def _configure_acme_ca_certificates_bundle(self):
         """Configure the LEGO CA certificates."""
         config_certs = self._get_ca_certs_from_config()
         relation_certs: Set[str] = set()
@@ -228,6 +228,8 @@ class LegoCharm(CharmBase):
             return "invalid ACME server"
         if not _plugin_is_valid(self._plugin):
             return "invalid plugin"
+        if err := self._validate_acme_ca_certificates_config_option():
+            return err
         return ""
 
     def _validate_plugin_config_options(self) -> str:
@@ -242,6 +244,23 @@ class LegoCharm(CharmBase):
             logger.warning("this plugin's config options are not validated by the charm.")
             return ""
         return plugin_validator.validate(self._plugin_config)
+
+    def _validate_acme_ca_certificates_config_option(self) -> str:
+        """Validate the acme-ca-certificates config option.
+
+        Returns:
+            str: Error message if invalid, otherwise an empty string.
+        """
+        ca_certificate = self.model.config.get("acme-ca-certificates", None)
+        if not isinstance(ca_certificate, str) or not ca_certificate.strip():
+            return ""
+
+        try:
+            x509.load_pem_x509_certificates(ca_certificate.encode())
+        except Exception:
+            return "acme-ca-certificates contains invalid PEM data"
+
+        return ""
 
     def _get_or_create_acme_account_private_key(self) -> str:
         """Get the private key if it exists, create it and store it if it doesn't.
@@ -363,17 +382,6 @@ class LegoCharm(CharmBase):
             return None
         return server
 
-    def _get_ca_certs_from_config(self) -> Set[str]:
-        """Return a set of PEM CA certificates provided via config.
-
-        The config option may contain multiple concatenated PEM blocks.
-        """
-        ca_certificate = self.model.config.get("acme-ca-certificate", None)
-        if not isinstance(ca_certificate, str) or not ca_certificate.strip():
-            return set()
-        certs = self._normalize_pem_certificates([ca_certificate])
-        return set(certs)
-
     @property
     def _acme_ca_certificates_env(self) -> Dict[str, str]:
         """CA certificates environment variable to use with LEGO."""
@@ -385,30 +393,44 @@ class LegoCharm(CharmBase):
             return {}
         return {}
 
-    def _normalize_pem_certificates(self, raw_cert_blobs: Iterable[str]) -> list[str]:
-        """Parse and sanitize PEM certificates, deduplicating by exact bytes.
+    def _get_ca_certs_from_config(self) -> Set[str]:
+        """Return a set of PEM CA certificates provided via config.
+
+        The config option may contain multiple concatenated PEM blocks.
+        """
+        ca_certificate = self.model.config.get("acme-ca-certificates", None)
+        if not isinstance(ca_certificate, str) or not ca_certificate.strip():
+            return set()
+        certs = self._parse_pem_certificates(ca_certificate)
+        return set(certs)
+
+    def _parse_pem_certificates(self, raw_cert: str) -> list[str]:
+        """Parse PEM certificates.
 
         Returns a list of PEM strings with standard formatting.
         """
+        if not isinstance(raw_cert, str) or not raw_cert.strip():
+            return []
+
         normalized: list[str] = []
         seen_bytes: set[bytes] = set()
-        for blob in raw_cert_blobs:
-            if not isinstance(blob, str) or not blob.strip():
+
+        try:
+            certs = x509.load_pem_x509_certificates(raw_cert.encode())
+        except Exception:
+            return []
+
+        for cert in certs:
+            pem_bytes = cert.public_bytes(encoding=serialization.Encoding.PEM)
+            if pem_bytes in seen_bytes:
                 continue
-            try:
-                certs = x509.load_pem_x509_certificates(blob.encode())
-            except Exception:
-                continue
-            for cert in certs:
-                pem_bytes = cert.public_bytes(encoding=serialization.Encoding.PEM)
-                if pem_bytes in seen_bytes:
-                    continue
-                seen_bytes.add(pem_bytes)
-                normalized.append(pem_bytes.decode())
+            seen_bytes.add(pem_bytes)
+            normalized.append(pem_bytes.decode())
+
         return normalized
 
     def _write_acme_ca_bundle_file(self, pem_certs: list[str]) -> None:
-        """Write the combined CA bundle to disk, or remove it if empty."""
+        """Write the combined CA bundle to disk."""
         path = ACME_CA_CERTIFICATES_FILE_PATH
         directory = os.path.dirname(path)
         try:

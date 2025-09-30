@@ -135,6 +135,59 @@ class TestLegoOperatorCharmCollectStatus:
             "namecheap-api-key and namecheap-api-user must be set"
         )
 
+    def test_given_invalid_acme_ca_certificate_when_update_status_then_status_is_blocked(self):
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+                "acme-ca-certificates": "not a valid PEM certificate",
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status.name == "blocked"
+        assert "acme-ca-certificates contains invalid PEM data" in out.unit_status.message
+
+    def test_given_empty_acme_ca_certificate_when_update_status_then_status_is_active(self):
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == ActiveStatus("0/0 certificate requests are fulfilled")
+
+    def test_given_valid_acme_ca_certificate_when_update_status_then_status_is_active(self):
+        ca_pk = generate_private_key()
+        ca_cert = generate_ca(ca_pk, common_name="Test CA", validity=timedelta(days=365))
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+                "acme-ca-certificates": str(ca_cert),
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == ActiveStatus("0/0 certificate requests are fulfilled")
+
     def test_given_valid_plugin_config_when_update_status_then_status_is_active(self):
         state = State(
             leader=True,
