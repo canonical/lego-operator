@@ -8,11 +8,12 @@ import logging
 import os
 import re
 from contextlib import contextmanager
-from typing import Any, Dict
+from typing import Any, Dict, Set
 from urllib.parse import urlparse
 
 from charms.certificate_transfer_interface.v1.certificate_transfer import (
     CertificateTransferProvides,
+    CertificateTransferRequires,
 )
 from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.tls_certificates_interface.v4.tls_certificates import (
@@ -35,8 +36,10 @@ import plugin_configs
 logger = logging.getLogger(__name__)
 
 CERTIFICATES_RELATION_NAME = "certificates"
-CA_TRANSFER_RELATION_NAME = "send-ca-cert"
+SEND_CA_TRANSFER_RELATION_NAME = "send-ca-cert"
+RECEIVE_CA_TRANSFER_RELATION_NAME = "receive-ca-cert"
 ACCOUNT_SECRET_LABEL = "acme-account-details"
+ACME_CA_CERTIFICATES_FILE_PATH = "/var/lib/acme-ca-certificates.pem"
 
 
 class LegoCharm(CharmBase):
@@ -49,18 +52,27 @@ class LegoCharm(CharmBase):
         super().__init__(*args)
         self._logging = LogForwarder(self, relation_name="logging")
         self._tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
-        self.cert_transfer = CertificateTransferProvides(self, CA_TRANSFER_RELATION_NAME)
+        self.cert_transfer = CertificateTransferProvides(self, SEND_CA_TRANSFER_RELATION_NAME)
+        self.receive_ca_certificates = CertificateTransferRequires(
+            self, RECEIVE_CA_TRANSFER_RELATION_NAME
+        )
 
         [
             self.framework.observe(event, self._configure)
             for event in [
-                self.on[CA_TRANSFER_RELATION_NAME].relation_joined,
+                self.on[SEND_CA_TRANSFER_RELATION_NAME].relation_joined,
                 self.on[CERTIFICATES_RELATION_NAME].relation_changed,
                 self.on.secret_changed,
                 self.on.config_changed,
                 self.on.update_status,
             ]
         ]
+        self.framework.observe(
+            self.receive_ca_certificates.on.certificate_set_updated, self._configure
+        )
+        self.framework.observe(
+            self.receive_ca_certificates.on.certificates_removed, self._configure
+        )
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
         self._plugin = str(self.model.config.get("plugin", ""))
@@ -93,8 +105,18 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             logger.error("plugin config validation failed: %s", err)
             return
+        self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
-        self._configure_ca_certificates()
+        self._configure_send_ca_certificates()
+
+    def _configure_acme_ca_certificates_bundle(self):
+        """Configure the LEGO CA certificates."""
+        config_certs = self._get_ca_certs_from_config()
+        relation_certs: Set[str] = set()
+        if len(self.model.relations.get(RECEIVE_CA_TRANSFER_RELATION_NAME, [])) > 0:
+            relation_certs = self.receive_ca_certificates.get_all_certificates()
+        combined_certs = list(config_certs | relation_certs)
+        self._write_acme_ca_bundle_file(combined_certs)
 
     def _configure_certificates(self):
         """Attempt to fulfill all certificate requests."""
@@ -120,9 +142,9 @@ class LegoCharm(CharmBase):
                         relation_id=certificate_request.relation_id,
                     )
 
-    def _configure_ca_certificates(self):
+    def _configure_send_ca_certificates(self):
         """Distribute all used issuer certificates to requirers."""
-        if len(self.model.relations.get(CA_TRANSFER_RELATION_NAME, [])) > 0:
+        if len(self.model.relations.get(SEND_CA_TRANSFER_RELATION_NAME, [])) > 0:
             self.cert_transfer.add_certificates(
                 {
                     str(provider_certificate.ca)
@@ -139,7 +161,9 @@ class LegoCharm(CharmBase):
                 private_key=private_key,
                 server=self._server or "",
                 csr=csr.raw.encode(),
-                env=self._plugin_config | self._app_environment,
+                env=self._plugin_config | self._app_environment | self._acme_ca_certificates_env
+                if self._acme_ca_certificates_env
+                else self._plugin_config | self._app_environment,
                 plugin=self._plugin,
             )
         except LEGOError as e:
@@ -204,6 +228,8 @@ class LegoCharm(CharmBase):
             return "invalid ACME server"
         if not _plugin_is_valid(self._plugin):
             return "invalid plugin"
+        if err := self._validate_acme_ca_certificates_config_option():
+            return err
         return ""
 
     def _validate_plugin_config_options(self) -> str:
@@ -218,6 +244,23 @@ class LegoCharm(CharmBase):
             logger.warning("this plugin's config options are not validated by the charm.")
             return ""
         return plugin_validator.validate(self._plugin_config)
+
+    def _validate_acme_ca_certificates_config_option(self) -> str:
+        """Validate the acme-ca-certificates config option.
+
+        Returns:
+            str: Error message if invalid, otherwise an empty string.
+        """
+        ca_certificate = self.model.config.get("acme-ca-certificates", None)
+        if not isinstance(ca_certificate, str) or not ca_certificate.strip():
+            return ""
+
+        try:
+            x509.load_pem_x509_certificates(ca_certificate.encode())
+        except Exception:
+            return "acme-ca-certificates contains invalid PEM data"
+
+        return ""
 
     def _get_or_create_acme_account_private_key(self) -> str:
         """Get the private key if it exists, create it and store it if it doesn't.
@@ -338,6 +381,68 @@ class LegoCharm(CharmBase):
         if not isinstance(server, str):
             return None
         return server
+
+    @property
+    def _acme_ca_certificates_env(self) -> Dict[str, str]:
+        """CA certificates environment variable to use with LEGO."""
+        path = ACME_CA_CERTIFICATES_FILE_PATH
+        try:
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                return {"LEGO_CA_CERTIFICATES": path}
+        except OSError:
+            return {}
+        return {}
+
+    def _get_ca_certs_from_config(self) -> Set[str]:
+        """Return a set of PEM CA certificates provided via config.
+
+        The config option may contain multiple concatenated PEM blocks.
+        """
+        ca_certificate = self.model.config.get("acme-ca-certificates", None)
+        if not isinstance(ca_certificate, str) or not ca_certificate.strip():
+            return set()
+        certs = self._parse_pem_certificates(ca_certificate)
+        return set(certs)
+
+    def _parse_pem_certificates(self, raw_cert: str) -> list[str]:
+        """Parse PEM certificates.
+
+        Returns a list of PEM strings with standard formatting.
+        """
+        if not isinstance(raw_cert, str) or not raw_cert.strip():
+            return []
+
+        normalized: list[str] = []
+        seen_bytes: set[bytes] = set()
+
+        try:
+            certs = x509.load_pem_x509_certificates(raw_cert.encode())
+        except Exception:
+            return []
+
+        for cert in certs:
+            pem_bytes = cert.public_bytes(encoding=serialization.Encoding.PEM)
+            if pem_bytes in seen_bytes:
+                continue
+            seen_bytes.add(pem_bytes)
+            normalized.append(pem_bytes.decode())
+
+        return normalized
+
+    def _write_acme_ca_bundle_file(self, pem_certs: list[str]) -> None:
+        """Write the combined CA bundle to disk."""
+        path = ACME_CA_CERTIFICATES_FILE_PATH
+        directory = os.path.dirname(path)
+        try:
+            if not pem_certs:
+                if os.path.isfile(path):
+                    os.remove(path)
+                return
+            os.makedirs(directory, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n".join(cert.strip() + "\n" for cert in pem_certs))
+        except OSError as e:
+            logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
 
 
 def get_env_var(env_var: str) -> str | None:

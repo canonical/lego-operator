@@ -3,6 +3,8 @@
 #
 # Learn more about testing at: https://juju.is/docs/sdk/testing
 
+import os
+import tempfile
 from datetime import timedelta
 from unittest.mock import MagicMock, Mock, patch
 
@@ -392,3 +394,67 @@ class TestLegoOperatorCharmConfigure:
         assert {"private-key": str(mock_account_pk), "email": "different@email.com"} in [
             s.tracked_content for s in state_out.secrets
         ]
+
+    @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch("charm.generate_private_key")
+    def test_given_ca_cert_configured_when_certificate_request_then_lego_uses_ca_env_var(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_run_lego: MagicMock,
+    ):
+        ca_pk = generate_private_key()
+        ca_cert = generate_ca(ca_pk, common_name="Test CA", validity=timedelta(days=365))
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "foo.com")
+        issuer_pk = generate_private_key()
+        issuer = generate_ca(issuer_pk, common_name="ca", validity=timedelta(days=365))
+        cert = generate_certificate(csr, issuer, issuer_pk, timedelta(days=365))
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=True)
+        ]
+        mock_run_lego.return_value = LEGOResponse(
+            csr=str(csr),
+            private_key=str(generate_private_key()),
+            certificate=f"{str(cert)}\n{str(issuer)}",
+            issuer_certificate=str(issuer),
+            metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
+        )
+
+        # Create a temporary file to simulate the CA bundle
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pem") as f:
+            f.write(str(ca_cert))
+            ca_file_path = f.name
+
+        try:
+            with patch("charm.ACME_CA_CERTIFICATES_FILE_PATH", ca_file_path):
+                state = State(
+                    leader=True,
+                    secrets=[
+                        Secret(
+                            {"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1"
+                        )
+                    ],
+                    config={
+                        "email": "example@email.com",
+                        "server": "https://acme-v02.api.letsencrypt.org/directory",
+                        "plugin": "namecheap",
+                        "plugin-config-secret-id": "1",
+                        "acme-ca-certificates": str(ca_cert),
+                    },
+                    relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+                    unit_status=ActiveStatus(),  # type: ignore
+                )
+
+                self.ctx.run(self.ctx.on.config_changed(), state)
+
+                mock_run_lego.assert_called_once()
+                env_arg = mock_run_lego.call_args[1]["env"]
+                assert "LEGO_CA_CERTIFICATES" in env_arg
+                assert env_arg["LEGO_CA_CERTIFICATES"] == ca_file_path
+        finally:
+            os.unlink(ca_file_path)

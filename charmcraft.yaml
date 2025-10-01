@@ -3,7 +3,6 @@
 
 name: lego
 
-
 description: |
   LEGO operator implementing the provider side of the `tls-certificates`
   interface to get signed certificates from the `Let's Encrypt` ACME server
@@ -21,7 +20,6 @@ links:
     - https://github.com/canonical/lego-operator/issues
   documentation: https://discourse.charmhub.io/t/lego-docs-index/15658
 
-
 provides:
   certificates:
     interface: tls-certificates
@@ -33,6 +31,8 @@ requires:
     interface: loki_push_api
     limit: 1
     optional: true
+  receive-ca-cert:
+    interface: certificate_transfer
 
 type: "charm"
 
@@ -78,3 +78,10 @@ config:
         All keys are expected to be in lowercase with dashes instead of underscores.
         You can find the required options for your chosen plugin in the [LEGO documentation](https://go-acme.github.io/lego/dns).
         For example, the `route53` plugin requires a `secret-access-key` and `access-key-id` to be set.
+    acme-ca-certificates:
+      type: string
+      description: |
+        PEM-encoded CA certificates that can be used to authenticate an ACME server with an HTTPS certificate not issued by a CA in the system-wide trusted root list.
+        This should only be used for ACME servers that are not in the system-wide trusted root list and not operated by a charm.
+        Otherwise, use the `receive-ca-cert` relation to get the CAs from the ACME provider charm.
+        Example usage: `juju config lego acme-ca-certificate="$(cat /path/to/ca-bundle.pem)"`
