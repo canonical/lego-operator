@@ -6,11 +6,11 @@ name: lego
 description: |
   LEGO operator implementing the provider side of the `tls-certificates`
   interface to get signed certificates from the `Let's Encrypt` ACME server
-  using the DNS-01 challenge and a DNS provider of your choice.
+  using the DNS-01 challenge and a DNS provider of your choice, or the HTTP-01 challenge via ingress.
 summary: |
   LEGO operator implementing the provider side of the `tls-certificates`
   interface to get signed certificates from the `Let's Encrypt` ACME server
-  using the DNS-01 challenge.
+  using the DNS-01 or HTTP-01 challenge.
 links:
   website:
     - https://charmhub.io/lego
@@ -33,6 +33,9 @@ requires:
     optional: true
   receive-ca-cert:
     interface: certificate_transfer
+  ingress:
+    interface: ingress
+    limit: 1
 
 type: "charm"
 
@@ -67,7 +70,9 @@ config:
       default: "https://acme-v02.api.letsencrypt.org/directory"
     plugin:
       type: string
-      description: The DNS plugin to use with LEGO. You can choose from a list of supported plugins documented on the [LEGO website](https://go-acme.github.io/lego/dns).
+      description: |
+        The plugin to use with LEGO. For HTTP-01, set this to "http".
+        For DNS challenges, choose from the supported DNS plugins documented on the LEGO website (https://go-acme.github.io/lego/dns).
     plugin-config-secret-id:
       type: string
       description: >
@@ -83,3 +88,7 @@ config:
         This should only be used for ACME servers that are not in the system-wide trusted root list and not operated by a charm.
         Otherwise, use the `receive-ca-cert` relation to get the CAs from the ACME provider charm.
         Example usage: `juju config lego acme-ca-certificate="$(cat /path/to/ca-bundle.pem)"`
+    http-01-port:
+      type: int
+      default: 8080
+      description: Port to expose a simple HTTP server for HTTP-01 challenges.

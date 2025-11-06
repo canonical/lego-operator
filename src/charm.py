@@ -31,6 +31,8 @@ from ops.framework import EventBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from pylego import LEGOError, run_lego_command
 
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
+
 import plugin_configs
 
 logger = logging.getLogger(__name__)
@@ -40,6 +42,9 @@ SEND_CA_TRANSFER_RELATION_NAME = "send-ca-cert"
 RECEIVE_CA_TRANSFER_RELATION_NAME = "receive-ca-cert"
 ACCOUNT_SECRET_LABEL = "acme-account-details"
 ACME_CA_CERTIFICATES_FILE_PATH = "/var/lib/acme-ca-certificates.pem"
+
+HTTP01_IFACE_DEFAULT = ""
+HTTP01_WEBROOT_DIR = "/var/lib/lego-http01"
 
 
 class LegoCharm(CharmBase):
@@ -77,6 +82,17 @@ class LegoCharm(CharmBase):
 
         self._plugin = str(self.model.config.get("plugin", ""))
 
+        # HTTP-01: setup ingress on configured port and start local webroot server
+        self._ingress = None
+        if self._plugin in ("http-01", "http"):
+            try:
+                port = int(self.model.config.get("http-01-port", 8080))
+            except Exception:
+                port = 8080
+            self._ingress = IngressPerAppRequirer(self, port=port)
+            self._ensure_http01_webroot()
+            self._ensure_http01_server()
+
     def _on_collect_status(self, event: CollectStatusEvent) -> None:
         """Handle the collect status event."""
         if not self.unit.is_leader():
@@ -92,6 +108,9 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             event.add_status(BlockedStatus(err))
             return
+        if self._plugin in ("http-01", "http") and (not self._ingress or not self._ingress.url):
+            event.add_status(BlockedStatus("http-01 requires `ingress` relation"))
+            return
         event.add_status(ActiveStatus(self._get_certificate_fulfillment_status()))
 
     def _configure(self, event: EventBase) -> None:
@@ -105,6 +124,14 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             logger.error("plugin config validation failed: %s", err)
             return
+        if self._plugin in ("http-01", "http") and self._ingress:
+            try:
+                port = int(self.model.config.get("http-01-port", 8080))
+            except Exception:
+                port = 8080
+            self._ensure_http01_webroot()
+            self._ensure_http01_server()
+            self._ingress.provide_ingress_requirements(port=port)
         self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
         self._configure_send_ca_certificates()
@@ -156,15 +183,27 @@ class LegoCharm(CharmBase):
         """Generate signed certificate from the ACME provider."""
         try:
             private_key = self._get_or_create_acme_account_private_key()
+            base_env = (
+                self._plugin_config | self._app_environment | self._acme_ca_certificates_env
+                if self._acme_ca_certificates_env
+                else self._plugin_config | self._app_environment
+            )
+            # Configure lego HTTP-01 via webroot; do not enable TLS-ALPN
+            http01_env = {}
+            if self._plugin in ("http-01", "http"):
+                http01_env = {
+                    "LEGO_HTTP": "true",
+                    "LEGO_HTTP_WEBROOT": HTTP01_WEBROOT_DIR,
+                }
+            # For HTTP-01, avoid passing a DNS plugin name to lego
+            plugin_to_use = "" if self._plugin in ("http-01", "http") else self._plugin
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
                 server=self._server or "",
                 csr=csr.raw.encode(),
-                env=self._plugin_config | self._app_environment | self._acme_ca_certificates_env
-                if self._acme_ca_certificates_env
-                else self._plugin_config | self._app_environment,
-                plugin=self._plugin,
+                env=base_env | http01_env,
+                plugin=plugin_to_use,
             )
         except LEGOError as e:
             logger.error(
@@ -218,7 +257,7 @@ class LegoCharm(CharmBase):
             return "email address was not provided"
         if not self._server:
             return "acme server was not provided"
-        if not self._plugin_config:
+        if self._plugin not in ("http-01", "http") and not self._plugin_config:
             return "plugin configuration secret is not available"
         if not self._plugin:
             return "plugin was not provided"
@@ -238,6 +277,12 @@ class LegoCharm(CharmBase):
         Returns:
             str: Error message if invalid, otherwise an empty string.
         """
+        if self._plugin in ("http-01", "http"):
+            try:
+                _ = int(self.model.config.get("http-01-port", 8080))
+            except Exception:
+                return "invalid http-01-port"
+            return ""
         try:
             plugin_validator = getattr(plugin_configs, self._plugin)
         except AttributeError:
@@ -444,6 +489,40 @@ class LegoCharm(CharmBase):
         except OSError as e:
             logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
 
+
+    # HTTP-01 helpers: Simple HTTP server to serve webroot files
+    def _ensure_http01_webroot(self) -> None:
+        try:
+            os.makedirs(HTTP01_WEBROOT_DIR, exist_ok=True)
+        except OSError as e:
+            logger.warning("failed to prepare http-01 webroot: %s", e)
+
+    def _ensure_http01_server(self) -> None:
+        if getattr(self, "_http01_srv_started", False):
+            return
+
+        import threading
+        from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+        from functools import partial
+
+        try:
+            port = int(self.model.config.get("http-01-port", 8080))
+        except Exception:
+            port = 8080
+
+        handler = partial(SimpleHTTPRequestHandler, directory=HTTP01_WEBROOT_DIR)
+
+        def run_server():
+            try:
+                with ThreadingHTTPServer(("", port), handler) as httpd:
+                    logger.info("http-01 server listening on port %d", port)
+                    httpd.serve_forever()
+            except Exception as e:
+                logger.error("http-01 server terminated: %s", e)
+
+        t = threading.Thread(target=run_server, name="http01-server", daemon=True)
+        t.start()
+        self._http01_srv_started = True
 
 def get_env_var(env_var: str) -> str | None:
     """Get the environment variable value.
