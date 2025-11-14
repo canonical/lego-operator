@@ -7,6 +7,7 @@
 import logging
 import os
 import re
+import subprocess
 from contextlib import contextmanager
 from typing import Any, Dict, Set
 from urllib.parse import urlparse
@@ -108,9 +109,20 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             event.add_status(BlockedStatus(err))
             return
-        if self._plugin in ("http-01", "http") and (not self._ingress or not self._ingress.url):
-            event.add_status(BlockedStatus("http-01 requires `ingress` relation"))
-            return
+        if self._plugin in ("http-01", "http"):
+            if not self._ingress or not self._ingress.relation:
+                event.add_status(BlockedStatus("http-01 requires `ingress` relation"))
+                return
+            if not self._ingress.url:
+                event.add_status(
+                    BlockedStatus(
+                        "waiting for ingress URL from provider (ensure ingress provider is active)"
+                    )
+                )
+                return
+            if not self._is_http01_server_running():
+                event.add_status(BlockedStatus("http-01 server is not running"))
+                return
         event.add_status(ActiveStatus(self._get_certificate_fulfillment_status()))
 
     def _configure(self, event: EventBase) -> None:
@@ -118,20 +130,28 @@ class LegoCharm(CharmBase):
         if not self.unit.is_leader():
             logger.error("only the leader unit can handle certificate requests")
             return
+        
+        # Publish ingress requirements early (before validation) to avoid empty databags
+        # being read by the ingress provider during unrelated hooks
+        if self._plugin in ("http-01", "http"):
+            try:
+                port = int(self.model.config.get("http-01-port", 8080))
+            except Exception:
+                port = 8080
+            # Lazily initialize the ingress requirer if not yet created
+            if not self._ingress:
+                self._ingress = IngressPerAppRequirer(self, port=port)
+            # Always try to publish requirements to avoid empty databags on the provider side
+            self._ingress.provide_ingress_requirements(port=port)
+            self._ensure_http01_webroot()
+            self._ensure_http01_server()
+        
         if err := self._validate_charm_config_options():
             logger.error("charm config validation failed: %s", err)
             return
         if err := self._validate_plugin_config_options():
             logger.error("plugin config validation failed: %s", err)
             return
-        if self._plugin in ("http-01", "http") and self._ingress:
-            try:
-                port = int(self.model.config.get("http-01-port", 8080))
-            except Exception:
-                port = 8080
-            self._ensure_http01_webroot()
-            self._ensure_http01_server()
-            self._ingress.provide_ingress_requirements(port=port)
         self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
         self._configure_send_ca_certificates()
@@ -490,39 +510,66 @@ class LegoCharm(CharmBase):
             logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
 
 
-    # HTTP-01 helpers: Simple HTTP server to serve webroot files
+    # HTTP-01 helpers: Simple HTTP server process to serve webroot files
+    def _is_http01_server_running(self) -> bool:
+        """Check if HTTP-01 server process is running."""
+        try:
+            port = int(self.model.config.get("http-01-port", 8080))
+        except Exception:
+            port = 8080
+        
+        # Check if port is in use (server is likely running)
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        try:
+            result = sock.connect_ex(('127.0.0.1', port))
+            sock.close()
+            return result == 0  # Port is in use
+        except Exception:
+            return False
+
     def _ensure_http01_webroot(self) -> None:
+        """Ensure the HTTP-01 webroot directory exists."""
         try:
             os.makedirs(HTTP01_WEBROOT_DIR, exist_ok=True)
         except OSError as e:
             logger.warning("failed to prepare http-01 webroot: %s", e)
 
     def _ensure_http01_server(self) -> None:
-        if getattr(self, "_http01_srv_started", False):
-            return
-
-        import threading
-        from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
-        from functools import partial
-
+        """Ensure HTTP-01 server is running for ACME challenge.
+        
+        This starts a detached subprocess that persists across charm hook executions.
+        The subprocess is completely independent - it survives when the charm process exits.
+        
+        Technical details:
+        - start_new_session=True creates a new process group, detaching from parent
+        - When the charm process exits, this subprocess is adopted by init (PID 1)
+        - The server continues running until manually stopped or the system reboots
+        """
         try:
             port = int(self.model.config.get("http-01-port", 8080))
         except Exception:
             port = 8080
 
-        handler = partial(SimpleHTTPRequestHandler, directory=HTTP01_WEBROOT_DIR)
+        # Check if server is already running
+        if self._is_http01_server_running():
+            logger.debug("http-01 server already running on port %d", port)
+            return
 
-        def run_server():
-            try:
-                with ThreadingHTTPServer(("", port), handler) as httpd:
-                    logger.info("http-01 server listening on port %d", port)
-                    httpd.serve_forever()
-            except Exception as e:
-                logger.error("http-01 server terminated: %s", e)
-
-        t = threading.Thread(target=run_server, name="http01-server", daemon=True)
-        t.start()
-        self._http01_srv_started = True
+        # Start HTTP server as detached subprocess
+        try:
+            # Use Popen with start_new_session to completely detach from parent process
+            subprocess.Popen(
+                ["python3", "-m", "http.server", str(port), "--directory", HTTP01_WEBROOT_DIR, "--bind", "0.0.0.0"],
+                start_new_session=True,  # Detach from parent process group
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+            )
+            logger.info("started http-01 server process on port %d", port)
+        except Exception as e:
+            logger.error("failed to start http-01 server: %s", e)
 
 def get_env_var(env_var: str) -> str | None:
     """Get the environment variable value.
