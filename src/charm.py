@@ -91,8 +91,10 @@ class LegoCharm(CharmBase):
             except Exception:
                 port = 8080
             self._ingress = IngressPerAppRequirer(self, port=port)
-            self._ensure_http01_webroot()
-            self._ensure_http01_server()
+            # Create webroot and check if it was newly created
+            webroot_was_created = self._ensure_http01_webroot()
+            # Start or restart server (restart if webroot structure changed)
+            self._ensure_http01_server(force_restart=webroot_was_created)
 
     def _on_collect_status(self, event: CollectStatusEvent) -> None:
         """Handle the collect status event."""
@@ -143,8 +145,10 @@ class LegoCharm(CharmBase):
                 self._ingress = IngressPerAppRequirer(self, port=port)
             # Always try to publish requirements to avoid empty databags on the provider side
             self._ingress.provide_ingress_requirements(port=port)
-            self._ensure_http01_webroot()
-            self._ensure_http01_server()
+            # Create webroot and check if it was newly created
+            webroot_was_created = self._ensure_http01_webroot()
+            # Start or restart server (restart if webroot structure changed)
+            self._ensure_http01_server(force_restart=webroot_was_created)
         
         if err := self._validate_charm_config_options():
             logger.error("charm config validation failed: %s", err)
@@ -537,13 +541,20 @@ class LegoCharm(CharmBase):
             logger.warning("failed to check if http-01 server is running: %s", e)
             return False
 
-    def _ensure_http01_webroot(self) -> None:
-        """Ensure the HTTP-01 webroot directory exists."""
+    def _ensure_http01_webroot(self) -> bool:
+        """Ensure the HTTP-01 webroot directory exists.
+        
+        Returns:
+            bool: True if directory structure was created/modified, False if it already existed.
+        """
         try:
+            # Check if .well-known directory already exists
+            acme_challenge_dir = os.path.join(HTTP01_WEBROOT_DIR, ".well-known", "acme-challenge")
+            dir_existed = os.path.exists(acme_challenge_dir)
+            
             os.makedirs(HTTP01_WEBROOT_DIR, exist_ok=True)
             
             # Create the .well-known/acme-challenge directory for LEGO
-            acme_challenge_dir = os.path.join(HTTP01_WEBROOT_DIR, ".well-known", "acme-challenge")
             os.makedirs(acme_challenge_dir, exist_ok=True)
             
             # Set proper permissions
@@ -561,32 +572,52 @@ class LegoCharm(CharmBase):
             with open(index_file_path, "w") as f:
                 f.write("<html><body><h1>Lego HTTP-01 Server is Running!</h1></body></html>\n")
             
-            logger.debug("created test files and ACME challenge directory at %s", HTTP01_WEBROOT_DIR)
+            if not dir_existed:
+                logger.info("created ACME challenge directory structure at %s", HTTP01_WEBROOT_DIR)
+            else:
+                logger.debug("ACME challenge directory already exists at %s", HTTP01_WEBROOT_DIR)
+            
+            return not dir_existed  # Return True if we created new directories
         except OSError as e:
             logger.warning("failed to prepare http-01 webroot: %s", e)
+            return False
 
-    def _ensure_http01_server(self) -> None:
-        """Ensure HTTP-01 server is running for ACME challenge.
+    def _restart_http01_server(self) -> None:
+        """Restart the HTTP-01 server.
         
-        This starts a detached subprocess that persists across charm hook executions.
-        The subprocess is completely independent - it survives when the charm process exits.
-        
-        Technical details:
-        - start_new_session=True creates a new process group, detaching from parent
-        - When the charm process exits, this subprocess is adopted by init (PID 1)
-        - The server continues running until manually stopped or the system reboots
+        This is needed when the webroot directory structure changes, as Python's HTTP server
+        doesn't dynamically reload directory listings.
         """
         try:
             port = int(self.model.config.get("http-01-port", 8080))
         except Exception:
             port = 8080
+        
+        try:
+            # Kill existing HTTP server process
+            subprocess.run(
+                ["pkill", "-f", f"python3 -m http.server {port}"],
+                check=False,  # Don't fail if process doesn't exist
+                timeout=5,
+            )
+            logger.info("stopped existing http-01 server on port %d", port)
+            
+            # Wait a moment for the port to be released
+            import time
+            time.sleep(0.5)
+        except Exception as e:
+            logger.warning("failed to stop existing http-01 server: %s", e)
+        
+        # Start the server (let _ensure_http01_server handle this)
+        self._start_http01_server()
 
-        # Check if server is already running
-        if self._is_http01_server_running():
-            logger.info("http-01 server already running on port %d", port)
-            return
-
-        # Start HTTP server as detached subprocess
+    def _start_http01_server(self) -> None:
+        """Start the HTTP-01 server."""
+        try:
+            port = int(self.model.config.get("http-01-port", 8080))
+        except Exception:
+            port = 8080
+        
         try:
             # Log server startup attempt
             logger.info("starting http-01 server on port %d serving %s", port, HTTP01_WEBROOT_DIR)
@@ -611,6 +642,36 @@ class LegoCharm(CharmBase):
                 logger.error("http-01 server failed to start on port %d - port not bound after launch", port)
         except Exception as e:
             logger.error("failed to start http-01 server: %s", e)
+
+    def _ensure_http01_server(self, force_restart: bool = False) -> None:
+        """Ensure HTTP-01 server is running for ACME challenge.
+        
+        This starts a detached subprocess that persists across charm hook executions.
+        The subprocess is completely independent - it survives when the charm process exits.
+        
+        Technical details:
+        - start_new_session=True creates a new process group, detaching from parent
+        - When the charm process exits, this subprocess is adopted by init (PID 1)
+        - The server continues running until manually stopped or the system reboots
+        
+        Args:
+            force_restart: If True, restart the server even if it's already running.
+        """
+        try:
+            port = int(self.model.config.get("http-01-port", 8080))
+        except Exception:
+            port = 8080
+
+        # Check if server is already running
+        if self._is_http01_server_running() and not force_restart:
+            logger.info("http-01 server already running on port %d", port)
+            return
+        
+        if force_restart:
+            logger.info("restarting http-01 server on port %d", port)
+            self._restart_http01_server()
+        else:
+            self._start_http01_server()
 
 def get_env_var(env_var: str) -> str | None:
     """Get the environment variable value.
