@@ -541,6 +541,16 @@ class LegoCharm(CharmBase):
         """Ensure the HTTP-01 webroot directory exists."""
         try:
             os.makedirs(HTTP01_WEBROOT_DIR, exist_ok=True)
+            
+            # Create the .well-known/acme-challenge directory for LEGO
+            acme_challenge_dir = os.path.join(HTTP01_WEBROOT_DIR, ".well-known", "acme-challenge")
+            os.makedirs(acme_challenge_dir, exist_ok=True)
+            
+            # Set proper permissions
+            os.chmod(HTTP01_WEBROOT_DIR, 0o755)
+            os.chmod(os.path.join(HTTP01_WEBROOT_DIR, ".well-known"), 0o755)
+            os.chmod(acme_challenge_dir, 0o755)
+            
             # Create test files for easy verification
             test_file_path = os.path.join(HTTP01_WEBROOT_DIR, "test.txt")
             with open(test_file_path, "w") as f:
@@ -551,7 +561,7 @@ class LegoCharm(CharmBase):
             with open(index_file_path, "w") as f:
                 f.write("<html><body><h1>Lego HTTP-01 Server is Running!</h1></body></html>\n")
             
-            logger.debug("created test files at %s", HTTP01_WEBROOT_DIR)
+            logger.debug("created test files and ACME challenge directory at %s", HTTP01_WEBROOT_DIR)
         except OSError as e:
             logger.warning("failed to prepare http-01 webroot: %s", e)
 
