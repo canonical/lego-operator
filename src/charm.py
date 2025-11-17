@@ -45,7 +45,6 @@ ACCOUNT_SECRET_LABEL = "acme-account-details"
 ACME_CA_CERTIFICATES_FILE_PATH = "/var/lib/acme-ca-certificates.pem"
 
 HTTP01_IFACE_DEFAULT = ""
-HTTP01_WEBROOT_DIR = "/var/lib/lego-http01"
 
 
 class LegoCharm(CharmBase):
@@ -83,18 +82,23 @@ class LegoCharm(CharmBase):
 
         self._plugin = str(self.model.config.get("plugin", ""))
 
-        # HTTP-01: setup ingress on configured port and start local webroot server
+        # HTTP-01: setup ingress on configured port
+        # LEGO's built-in HTTP server will handle serving challenges
         self._ingress = None
         if self._plugin in ("http-01", "http"):
             try:
                 port = int(self.model.config.get("http-01-port", 8080))
             except Exception:
                 port = 8080
-            self._ingress = IngressPerAppRequirer(self, port=port)
-            # Create webroot and check if it was newly created
-            webroot_was_created = self._ensure_http01_webroot()
-            # Start or restart server (restart if webroot structure changed)
-            self._ensure_http01_server(force_restart=webroot_was_created)
+            self._ingress = IngressPerAppRequirer(
+                self,
+                port=port,
+                healthcheck_params={
+                    "path": "/",
+                    "interval": "10s",
+                    "timeout": "5s",
+                }
+            )
 
     def _on_collect_status(self, event: CollectStatusEvent) -> None:
         """Handle the collect status event."""
@@ -122,9 +126,6 @@ class LegoCharm(CharmBase):
                     )
                 )
                 return
-            if not self._is_http01_server_running():
-                event.add_status(BlockedStatus("http-01 server is not running"))
-                return
         event.add_status(ActiveStatus(self._get_certificate_fulfillment_status()))
 
     def _configure(self, event: EventBase) -> None:
@@ -142,13 +143,17 @@ class LegoCharm(CharmBase):
                 port = 8080
             # Lazily initialize the ingress requirer if not yet created
             if not self._ingress:
-                self._ingress = IngressPerAppRequirer(self, port=port)
+                self._ingress = IngressPerAppRequirer(
+                    self,
+                    port=port,
+                    healthcheck_params={
+                        "path": "/",
+                        "interval": "10s",
+                        "timeout": "5s",
+                    }
+                )
             # Always try to publish requirements to avoid empty databags on the provider side
             self._ingress.provide_ingress_requirements(port=port)
-            # Create webroot and check if it was newly created
-            webroot_was_created = self._ensure_http01_webroot()
-            # Start or restart server (restart if webroot structure changed)
-            self._ensure_http01_server(force_restart=webroot_was_created)
         
         if err := self._validate_charm_config_options():
             logger.error("charm config validation failed: %s", err)
@@ -212,16 +217,20 @@ class LegoCharm(CharmBase):
                 if self._acme_ca_certificates_env
                 else self._plugin_config | self._app_environment
             )
-            # Configure lego HTTP-01 via webroot; do not enable TLS-ALPN
+            # Configure LEGO HTTP-01 using built-in server (pylego doesn't support webroot)
             http01_env = {}
             if self._plugin in ("http-01", "http"):
+                try:
+                    port = int(self.model.config.get("http-01-port", 8080))
+                except Exception:
+                    port = 8080
                 http01_env = {
-                    "LEGO_HTTP": "true",
-                    "LEGO_HTTP_WEBROOT": HTTP01_WEBROOT_DIR,
+                    "HTTP01_PORT": str(port),
+                    "HTTP01_IFACE": HTTP01_IFACE_DEFAULT,
                 }
-                logger.debug("using HTTP-01 challenge with webroot: %s", HTTP01_WEBROOT_DIR)
-            # For HTTP-01, avoid passing a DNS plugin name to lego
-            plugin_to_use = "" if self._plugin in ("http-01", "http") else self._plugin
+                logger.debug("using HTTP-01 challenge with built-in server on port: %s", port)
+            # For HTTP-01, use "http" plugin to trigger LEGO's built-in HTTP server
+            plugin_to_use = "http" if self._plugin in ("http-01", "http") else self._plugin
             logger.debug("plugin: %s, plugin_to_use: %s, http01_env: %s", self._plugin, plugin_to_use, http01_env)
             response = run_lego_command(
                 email=self._email or "",
