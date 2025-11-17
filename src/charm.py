@@ -215,8 +215,10 @@ class LegoCharm(CharmBase):
                     "LEGO_HTTP": "true",
                     "LEGO_HTTP_WEBROOT": HTTP01_WEBROOT_DIR,
                 }
+                logger.debug("using HTTP-01 challenge with webroot: %s", HTTP01_WEBROOT_DIR)
             # For HTTP-01, avoid passing a DNS plugin name to lego
             plugin_to_use = "" if self._plugin in ("http-01", "http") else self._plugin
+            logger.debug("plugin: %s, plugin_to_use: %s, http01_env: %s", self._plugin, plugin_to_use, http01_env)
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
@@ -525,14 +527,31 @@ class LegoCharm(CharmBase):
         try:
             result = sock.connect_ex(('127.0.0.1', port))
             sock.close()
-            return result == 0  # Port is in use
-        except Exception:
+            is_running = result == 0  # Port is in use
+            if is_running:
+                logger.debug("http-01 server detected on port %d", port)
+            else:
+                logger.debug("http-01 server NOT detected on port %d (result: %d)", port, result)
+            return is_running
+        except Exception as e:
+            logger.warning("failed to check if http-01 server is running: %s", e)
             return False
 
     def _ensure_http01_webroot(self) -> None:
         """Ensure the HTTP-01 webroot directory exists."""
         try:
             os.makedirs(HTTP01_WEBROOT_DIR, exist_ok=True)
+            # Create test files for easy verification
+            test_file_path = os.path.join(HTTP01_WEBROOT_DIR, "test.txt")
+            with open(test_file_path, "w") as f:
+                f.write("Hello from Lego HTTP-01 server!\n")
+            
+            # Create an index.html for root path testing
+            index_file_path = os.path.join(HTTP01_WEBROOT_DIR, "index.html")
+            with open(index_file_path, "w") as f:
+                f.write("<html><body><h1>Lego HTTP-01 Server is Running!</h1></body></html>\n")
+            
+            logger.debug("created test files at %s", HTTP01_WEBROOT_DIR)
         except OSError as e:
             logger.warning("failed to prepare http-01 webroot: %s", e)
 
@@ -554,20 +573,32 @@ class LegoCharm(CharmBase):
 
         # Check if server is already running
         if self._is_http01_server_running():
-            logger.debug("http-01 server already running on port %d", port)
+            logger.info("http-01 server already running on port %d", port)
             return
 
         # Start HTTP server as detached subprocess
         try:
+            # Log server startup attempt
+            logger.info("starting http-01 server on port %d serving %s", port, HTTP01_WEBROOT_DIR)
+            
             # Use Popen with start_new_session to completely detach from parent process
-            subprocess.Popen(
+            process = subprocess.Popen(
                 ["python3", "-m", "http.server", str(port), "--directory", HTTP01_WEBROOT_DIR, "--bind", "0.0.0.0"],
                 start_new_session=True,  # Detach from parent process group
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
             )
-            logger.info("started http-01 server process on port %d", port)
+            
+            # Give it a moment to start
+            import time
+            time.sleep(0.5)
+            
+            # Verify it's running
+            if self._is_http01_server_running():
+                logger.info("http-01 server started successfully on port %d (PID: %s)", port, process.pid)
+            else:
+                logger.error("http-01 server failed to start on port %d - port not bound after launch", port)
         except Exception as e:
             logger.error("failed to start http-01 server: %s", e)
 
