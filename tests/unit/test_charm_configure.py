@@ -266,7 +266,6 @@ class TestLegoOperatorCharmConfigure:
 
         self.ctx.run(self.ctx.on.update_status(), state)
 
-        # Verify LEGO is run with HTTP-01 env and 'http' plugin
         kwargs = mock_run_lego.call_args.kwargs  # type: ignore[attr-defined]
         assert kwargs["plugin"] == "http"
         assert kwargs["env"]["HTTP01_PORT"] == "8080"
