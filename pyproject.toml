@@ -9,7 +9,7 @@ dependencies = [
     "ops",
     "pydantic==2.12.4",
     "pylego",
-    "rpds-py==0.28.0",
+    "rpds-py==0.29.0",
 ]
 
 [dependency-groups]
