@@ -22,6 +22,7 @@ from charm import LegoCharm
 
 TLS_LIB_PATH = "charms.tls_certificates_interface.v4.tls_certificates"
 CERTIFICATES_RELATION_NAME = "certificates"
+INGRESS_RELATION_NAME = "ingress"
 
 
 class TestLegoOperatorCharmCollectStatus:
@@ -168,6 +169,33 @@ class TestLegoOperatorCharmCollectStatus:
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == ActiveStatus("0/0 certificate requests are fulfilled")
+
+    def test_given_http01_plugin_and_no_ingress_when_update_status_then_status_is_blocked(self):
+        state = State(
+            leader=True,
+            config={
+                "email": "user@example.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "http",
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == BlockedStatus("ingress relation is required for http-01 plugin")
+
+    def test_given_http01_plugin_and_ingress_without_url_when_update_status_then_blocked(self):
+        state = State(
+            leader=True,
+            config={
+                "email": "user@example.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "http",
+            },
+            relations=[
+                Relation(endpoint=INGRESS_RELATION_NAME),
+            ],
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == BlockedStatus("ingress URL not available; waiting for provider")
 
     def test_given_valid_acme_ca_certificate_when_update_status_then_status_is_active(self):
         ca_pk = generate_private_key()

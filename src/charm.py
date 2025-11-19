@@ -23,6 +23,7 @@ from charms.tls_certificates_interface.v4.tls_certificates import (
     TLSCertificatesProvidesV4,
     generate_private_key,
 )
+from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from ops import ModelError, Secret, SecretNotFoundError, main
@@ -40,6 +41,8 @@ SEND_CA_TRANSFER_RELATION_NAME = "send-ca-cert"
 RECEIVE_CA_TRANSFER_RELATION_NAME = "receive-ca-cert"
 ACCOUNT_SECRET_LABEL = "acme-account-details"
 ACME_CA_CERTIFICATES_FILE_PATH = "/var/lib/acme-ca-certificates.pem"
+HTTP01_IFACE_DEFAULT = ""
+HTTP01_PORT_DEFAULT = 8080
 
 
 class LegoCharm(CharmBase):
@@ -76,6 +79,12 @@ class LegoCharm(CharmBase):
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
 
         self._plugin = str(self.model.config.get("plugin", ""))
+        self._ingress = None
+        if self._is_http_plugin:
+            self._ingress = IngressPerAppRequirer(
+                self,
+                healthcheck_params={"path": "/", "interval": "10s", "timeout": "5s"},
+            )
 
     def _on_collect_status(self, event: CollectStatusEvent) -> None:
         """Handle the collect status event."""
@@ -92,6 +101,13 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             event.add_status(BlockedStatus(err))
             return
+        if self._is_http_plugin:
+            if len(self.model.relations.get("ingress", [])) == 0:
+                event.add_status(BlockedStatus("ingress relation is required for http-01 plugin"))
+                return
+            if self._ingress is None or not self._ingress.url:
+                event.add_status(BlockedStatus("ingress URL not available; waiting for provider"))
+                return
         event.add_status(ActiveStatus(self._get_certificate_fulfillment_status()))
 
     def _configure(self, event: EventBase) -> None:
@@ -105,6 +121,10 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             logger.error("plugin config validation failed: %s", err)
             return
+        if self._is_http_plugin:
+            port = HTTP01_PORT_DEFAULT
+            if self._ingress:
+                self._ingress.provide_ingress_requirements(port=port)
         self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
         self._configure_send_ca_certificates()
@@ -156,15 +176,29 @@ class LegoCharm(CharmBase):
         """Generate signed certificate from the ACME provider."""
         try:
             private_key = self._get_or_create_acme_account_private_key()
+            http01_env: Dict[str, str] = {}
+            plugin_to_use = self._plugin
+            if self._is_http_plugin:
+                port = HTTP01_PORT_DEFAULT
+                logger.info("using HTTP-01 challenge with built-in server on port: %s", port)
+                http01_env = {
+                    "HTTP01_PORT": str(port),
+                    "HTTP01_IFACE": HTTP01_IFACE_DEFAULT,
+                }
+                plugin_to_use = "http"
+            base_env = (
+                self._plugin_config | self._app_environment | self._acme_ca_certificates_env
+                if self._acme_ca_certificates_env
+                else self._plugin_config | self._app_environment
+            )
+            env = base_env | http01_env
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
                 server=self._server or "",
                 csr=csr.raw.encode(),
-                env=self._plugin_config | self._app_environment | self._acme_ca_certificates_env
-                if self._acme_ca_certificates_env
-                else self._plugin_config | self._app_environment,
-                plugin=self._plugin,
+                env=env,
+                plugin=plugin_to_use,
             )
         except LEGOError as e:
             logger.error(
@@ -218,7 +252,7 @@ class LegoCharm(CharmBase):
             return "email address was not provided"
         if not self._server:
             return "acme server was not provided"
-        if not self._plugin_config:
+        if not self._is_http_plugin and not self._plugin_config:
             return "plugin configuration secret is not available"
         if not self._plugin:
             return "plugin was not provided"
@@ -238,6 +272,8 @@ class LegoCharm(CharmBase):
         Returns:
             str: Error message if invalid, otherwise an empty string.
         """
+        if self._is_http_plugin:
+            return ""
         try:
             plugin_validator = getattr(plugin_configs, self._plugin)
         except AttributeError:
@@ -392,6 +428,11 @@ class LegoCharm(CharmBase):
         except OSError:
             return {}
         return {}
+
+    @property
+    def _is_http_plugin(self) -> bool:
+        """Check if the plugin is HTTP."""
+        return self._plugin in ("http-01", "http")
 
     def _get_ca_certs_from_config(self) -> Set[str]:
         """Return a set of PEM CA certificates provided via config.

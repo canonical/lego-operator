@@ -223,6 +223,54 @@ class TestLegoOperatorCharmConfigure:
             plugin="namecheap",
         )
 
+    @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate", new=Mock)
+    @patch("charm.generate_private_key")
+    def test_given_http01_plugin_when_request_then_http01_env_and_plugin_used(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_run_lego: MagicMock,
+    ):
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "foo.example")
+        issuer_pk = generate_private_key()
+        issuer = generate_ca(issuer_pk, common_name="ca", validity=timedelta(days=365))
+        cert = generate_certificate(csr, issuer, issuer_pk, validity=timedelta(days=365))
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=True)
+        ]
+
+        mock_run_lego.return_value = LEGOResponse(
+            csr=str(csr),
+            private_key=str(generate_private_key()),
+            certificate=f"{str(cert)}\n{str(issuer)}",
+            issuer_certificate=str(issuer),
+            metadata=Metadata(stable_url="stable", url="tmp", domain="foo.example"),
+        )
+
+        state = State(
+            leader=True,
+            config={
+                "email": "user@example.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "http",
+            },
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        self.ctx.run(self.ctx.on.update_status(), state)
+
+        kwargs = mock_run_lego.call_args.kwargs  # type: ignore[attr-defined]
+        assert kwargs["plugin"] == "http"
+        assert kwargs["env"]["HTTP01_PORT"] == "8080"
+        assert kwargs["env"]["HTTP01_IFACE"] == ""
+
     @patch(f"{CERT_TRANSFER_LIB_PATH}.CertificateTransferProvides.add_certificates")
     def test_given_cert_transfer_relation_not_created_then_ca_certificates_not_added_in_relation_data(  # noqa: E501
         self, mock_add_certificates: MagicMock

@@ -33,6 +33,9 @@ requires:
     optional: true
   receive-ca-cert:
     interface: certificate_transfer
+  ingress:
+    interface: ingress
+    limit: 1
 
 type: "charm"
 
