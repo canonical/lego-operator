@@ -80,7 +80,7 @@ class LegoCharm(CharmBase):
 
         self._plugin = str(self.model.config.get("plugin", ""))
         self._ingress = None
-        if self._plugin in ("http-01", "http"):
+        if self._is_http_plugin:
             self._ingress = IngressPerAppRequirer(
                 self,
                 healthcheck_params={"path": "/", "interval": "10s", "timeout": "5s"},
@@ -101,7 +101,7 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             event.add_status(BlockedStatus(err))
             return
-        if self._plugin in ("http-01", "http"):
+        if self._is_http_plugin:
             if len(self.model.relations.get("ingress", [])) == 0:
                 event.add_status(BlockedStatus("ingress relation is required for http-01 plugin"))
                 return
@@ -121,7 +121,7 @@ class LegoCharm(CharmBase):
         if err := self._validate_plugin_config_options():
             logger.error("plugin config validation failed: %s", err)
             return
-        if self._plugin in ("http-01", "http"):
+        if self._is_http_plugin:
             port = HTTP01_PORT_DEFAULT
             if self._ingress:
                 self._ingress.provide_ingress_requirements(port=port)
@@ -178,7 +178,7 @@ class LegoCharm(CharmBase):
             private_key = self._get_or_create_acme_account_private_key()
             http01_env: Dict[str, str] = {}
             plugin_to_use = self._plugin
-            if self._plugin in ("http-01", "http"):
+            if self._is_http_plugin:
                 port = HTTP01_PORT_DEFAULT
                 logger.info("using HTTP-01 challenge with built-in server on port: %s", port)
                 http01_env = {
@@ -252,7 +252,7 @@ class LegoCharm(CharmBase):
             return "email address was not provided"
         if not self._server:
             return "acme server was not provided"
-        if self._plugin not in ("http-01", "http") and not self._plugin_config:
+        if not self._is_http_plugin and not self._plugin_config:
             return "plugin configuration secret is not available"
         if not self._plugin:
             return "plugin was not provided"
@@ -272,7 +272,7 @@ class LegoCharm(CharmBase):
         Returns:
             str: Error message if invalid, otherwise an empty string.
         """
-        if self._plugin in ("http-01", "http"):
+        if self._is_http_plugin:
             return ""
         try:
             plugin_validator = getattr(plugin_configs, self._plugin)
@@ -428,6 +428,11 @@ class LegoCharm(CharmBase):
         except OSError:
             return {}
         return {}
+
+    @property
+    def _is_http_plugin(self) -> bool:
+        """Check if the plugin is HTTP."""
+        return self._plugin in ("http-01", "http")
 
     def _get_ca_certs_from_config(self) -> Set[str]:
         """Return a set of PEM CA certificates provided via config.
