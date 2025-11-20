@@ -83,7 +83,6 @@ class LegoCharm(CharmBase):
         if self._is_http_plugin:
             self._ingress = IngressPerAppRequirer(
                 self,
-                healthcheck_params={"path": "/", "interval": "10s", "timeout": "5s"},
             )
 
     def _on_collect_status(self, event: CollectStatusEvent) -> None:
