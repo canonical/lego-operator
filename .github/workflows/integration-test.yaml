@@ -10,6 +10,8 @@ jobs:
         arch:
           - arch: amd64
             runner: ubuntu-22.04
+          - arch: amd64
+            runner: ubuntu-24.04
 
     runs-on: ${{ matrix.arch.runner }}
     steps:
