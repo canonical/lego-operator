@@ -26,7 +26,7 @@ jobs:
 
       - name: Get Charm Under Test Path
         id: charm-path
-        run: echo "charm_path=$(find built/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
+        run: echo "charm_path=$(ls -1 built/*.charm | head -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
