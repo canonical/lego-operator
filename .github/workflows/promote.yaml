@@ -10,11 +10,18 @@ on:
           - edge -> beta
           - beta -> candidate
           - candidate -> stable
+        base:
+          type: choice
+          description: Base to promote from
+          options:
+            - ubuntu-22.04
+            - ubuntu-24.04
 
 env:
   PROMOTE_FROM: ${{ inputs.promotion == 'edge -> beta' && 'edge' || inputs.promotion == 'beta -> candidate' && 'beta' || inputs.promotion == 'candidate -> stable' && 'candidate' || '' }}
   PROMOTE_TO: ${{ inputs.promotion == 'edge -> beta' && 'beta' || inputs.promotion == 'beta -> candidate' && 'candidate' || inputs.promotion == 'candidate -> stable' && 'stable' || '' }}
   TRACK: "4" # This also needs to be updated in the scan job below
+  BASE_CHANNEL: ${{ inputs.base == 'ubuntu-22.04' && '22.04' || inputs.base == 'ubuntu-24.04' && '24.04' || '' }}
 
 jobs:
   scan:
@@ -36,7 +43,7 @@ jobs:
       - name: Promote Charm
         uses: canonical/charming-actions/release-charm@2.7.0
         with:
-          base-channel: 22.04
+          base-channel: ${{ env.BASE_CHANNEL }}
           credentials: ${{ secrets.CHARMCRAFT_AUTH }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           destination-channel: ${{ env.TRACK }}/${{ env.PROMOTE_TO }}

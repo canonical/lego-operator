@@ -28,7 +28,7 @@ jobs:
       - lint-report
       - static-analysis
       - unit-tests-with-coverage
-    uses: canonical/identity-credentials-workflows/.github/workflows/build-charm-multiarch.yaml@v0
+    uses: canonical/identity-credentials-workflows/.github/workflows/build-charm.yaml@v0
     secrets: inherit
 
   integration-test:

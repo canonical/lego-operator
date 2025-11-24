@@ -10,6 +10,8 @@ jobs:
         arch:
           - arch: amd64
             runner: ubuntu-22.04
+          - arch: amd64
+            runner: ubuntu-24.04
 
     runs-on: ${{ matrix.arch.runner }}
     steps:
@@ -24,7 +26,12 @@ jobs:
 
       - name: Get Charm Under Test Path
         id: charm-path
-        run: echo "charm_path=$(find built/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
+        run: |
+          {
+            echo "charm_path<<EOF"
+            find built/ -name '*.charm' -type f -print -quit
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
