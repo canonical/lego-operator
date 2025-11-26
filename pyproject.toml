@@ -7,7 +7,7 @@ dependencies = [
     "cosl",
     "cryptography",
     "ops",
-    "pydantic==2.12.4",
+    "pydantic==2.12.5",
     "pylego",
     "rpds-py==0.29.0",
 ]
