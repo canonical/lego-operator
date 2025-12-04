@@ -10,12 +10,12 @@ on:
           - edge -> beta
           - beta -> candidate
           - candidate -> stable
-        base:
-          type: choice
-          description: Base to promote from
-          options:
-            - ubuntu-22.04
-            - ubuntu-24.04
+      base:
+        type: choice
+        description: Base to promote from
+        options:
+          - ubuntu-22.04
+          - ubuntu-24.04
 
 env:
   PROMOTE_FROM: ${{ inputs.promotion == 'edge -> beta' && 'edge' || inputs.promotion == 'beta -> candidate' && 'beta' || inputs.promotion == 'candidate -> stable' && 'candidate' || '' }}
@@ -26,7 +26,7 @@ env:
 jobs:
   scan:
     name: Secscan
-    uses: canonical/identity-credentials-workflows/.github/workflows/secscan-charm.yaml@v0
+    uses: canonical/identity-credentials-workflows/.github/workflows/secscan-charm.yaml@v1.1.0
     with:
       charm: lego
       # We have to compute the channel here again because we can't pass env variables to a reusable workflow
