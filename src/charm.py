@@ -11,18 +11,18 @@ from contextlib import contextmanager
 from typing import Any, Dict, Set
 from urllib.parse import urlparse
 
-from charms.certificate_transfer_interface.v1.certificate_transfer import (
-    CertificateTransferProvides,
-    CertificateTransferRequires,
-)
-from charms.loki_k8s.v1.loki_push_api import LogForwarder
-from charms.tls_certificates_interface.v4.tls_certificates import (
+from charmlibs.interfaces.tls_certificates import (
     Certificate,
     CertificateSigningRequest,
     ProviderCertificate,
     TLSCertificatesProvidesV4,
     generate_private_key,
 )
+from charms.certificate_transfer_interface.v1.certificate_transfer import (
+    CertificateTransferProvides,
+    CertificateTransferRequires,
+)
+from charms.loki_k8s.v1.loki_push_api import LogForwarder
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
