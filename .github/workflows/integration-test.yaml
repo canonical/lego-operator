@@ -2,6 +2,15 @@ name: Integration tests
 
 on:
   workflow_call:
+    inputs:
+      artifacts-key:
+        description: Key used to download the charm artifacts
+        required: true
+        type: string
+      charm-paths:
+        description: Comma-separated list of built charm file names
+        required: true
+        type: string
 
 jobs:
   integration-test:
@@ -10,6 +19,10 @@ jobs:
         arch:
           - arch: amd64
             runner: ubuntu-22.04
+            base: "22.04"
+          - arch: amd64
+            runner: ubuntu-24.04
+            base: "24.04"
 
     runs-on: ${{ matrix.arch.runner }}
     steps:
@@ -17,14 +30,27 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Fetch Charm Under Test
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v4
         with:
-          name: built-charm-${{ matrix.arch.arch }}
+          name: ${{ inputs.artifacts-key }}
           path: built/
 
       - name: Get Charm Under Test Path
         id: charm-path
-        run: echo "charm_path=$(find built/ -name '*.charm' -type f -print)" >> $GITHUB_OUTPUT
+        env:
+          CHARM_PATHS: ${{ inputs.charm-paths }}
+          BASE: ${{ matrix.arch.base }}
+          ARCH: ${{ matrix.arch.arch }}
+        run: |
+          IFS=',' read -ra paths <<< "$CHARM_PATHS"
+          for charm in "${paths[@]}"; do
+            if [[ "$charm" == *"ubuntu@${BASE}-${ARCH}.charm" ]]; then
+              echo "charm_path=built/${charm}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "Unable to find a charm artifact for ubuntu@${BASE}-${ARCH}" >&2
+          exit 1
 
       - name: Setup operator environment
         uses: charmed-kubernetes/actions-operator@main
