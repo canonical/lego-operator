@@ -191,6 +191,7 @@ class LegoCharm(CharmBase):
                 else self._plugin_config | self._app_environment
             )
             env = base_env | http01_env
+            dns_timeout = self.model.config.get("dns-propagation-timeout")
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
@@ -198,6 +199,7 @@ class LegoCharm(CharmBase):
                 csr=csr.raw.encode(),
                 env=env,
                 plugin=plugin_to_use,
+                dns_propagation_wait=dns_timeout,
             )
         except LEGOError as e:
             logger.error(
@@ -263,6 +265,8 @@ class LegoCharm(CharmBase):
             return "invalid plugin"
         if err := self._validate_acme_ca_certificates_config_option():
             return err
+        if err := self._validate_dns_propagation_timeout():
+            return err
         return ""
 
     def _validate_plugin_config_options(self) -> str:
@@ -295,6 +299,24 @@ class LegoCharm(CharmBase):
         except Exception:
             return "acme-ca-certificates contains invalid PEM data"
 
+        return ""
+
+    def _validate_dns_propagation_timeout(self) -> str:
+        """Validate the dns-propagation-timeout config option.
+
+        Returns:
+            str: Error message if invalid, otherwise an empty string.
+        """
+        timeout = self.model.config.get("dns-propagation-timeout", None)
+        if timeout is None:
+            return ""
+        
+        if not isinstance(timeout, int):
+            return "dns-propagation-timeout must be an integer"
+        
+        if timeout <= 0:
+            return "dns-propagation-timeout must be greater than 0"
+        
         return ""
 
     def _get_or_create_acme_account_private_key(self) -> str:
