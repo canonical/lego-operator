@@ -310,13 +310,13 @@ class LegoCharm(CharmBase):
         timeout = self.model.config.get("dns-propagation-timeout", None)
         if timeout is None:
             return ""
-        
+
         if not isinstance(timeout, int):
             return "dns-propagation-timeout must be an integer"
-        
+
         if timeout <= 0:
             return "dns-propagation-timeout must be greater than 0"
-        
+
         return ""
 
     def _get_or_create_acme_account_private_key(self) -> str:

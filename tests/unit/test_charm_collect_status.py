@@ -187,9 +187,7 @@ class TestLegoOperatorCharmCollectStatus:
             },
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
-        assert out.unit_status == BlockedStatus(
-            "dns-propagation-timeout must be greater than 0"
-        )
+        assert out.unit_status == BlockedStatus("dns-propagation-timeout must be greater than 0")
 
     def test_given_zero_dns_propagation_timeout_when_update_status_then_status_is_blocked(self):
         state = State(
@@ -206,9 +204,7 @@ class TestLegoOperatorCharmCollectStatus:
             },
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
-        assert out.unit_status == BlockedStatus(
-            "dns-propagation-timeout must be greater than 0"
-        )
+        assert out.unit_status == BlockedStatus("dns-propagation-timeout must be greater than 0")
 
     def test_given_valid_dns_propagation_timeout_when_update_status_then_status_is_active(self):
         state = State(
