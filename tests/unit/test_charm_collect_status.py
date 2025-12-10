@@ -6,7 +6,7 @@
 from datetime import timedelta
 from unittest.mock import MagicMock, Mock, patch
 
-from charms.tls_certificates_interface.v4.tls_certificates import (
+from charmlibs.interfaces.tls_certificates import (
     ProviderCertificate,
     RequirerCertificateRequest,
     generate_ca,
@@ -20,7 +20,7 @@ from scenario import Context, Relation, Secret, State
 
 from charm import LegoCharm
 
-TLS_LIB_PATH = "charms.tls_certificates_interface.v4.tls_certificates"
+TLS_LIB_PATH = "charmlibs.interfaces.tls_certificates"
 CERTIFICATES_RELATION_NAME = "certificates"
 INGRESS_RELATION_NAME = "ingress"
 
