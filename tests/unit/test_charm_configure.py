@@ -77,6 +77,7 @@ class TestLegoOperatorCharmConfigure:
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
+                "dns-propagation-wait": 600,
             },
             relations=[
                 Relation(endpoint=CERTIFICATES_RELATION_NAME),
@@ -92,6 +93,7 @@ class TestLegoOperatorCharmConfigure:
             csr=str(csr).encode(),
             env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
             plugin="namecheap",
+            dns_propagation_wait=600,
         )
         mock_set_relation_certificate.assert_called_with(
             provider_certificate=ProviderCertificate(
@@ -150,6 +152,7 @@ class TestLegoOperatorCharmConfigure:
             csr=str(csr).encode(),
             env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
             plugin="namecheap",
+            dns_propagation_wait=None,
         )
         assert not mock_set_relation_certificate.called
 
@@ -221,6 +224,7 @@ class TestLegoOperatorCharmConfigure:
                 "NO_PROXY": "No proxy",
             },
             plugin="namecheap",
+            dns_propagation_wait=None,
         )
 
     @patch("charm.run_lego_command")
