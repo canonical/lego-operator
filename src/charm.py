@@ -191,6 +191,7 @@ class LegoCharm(CharmBase):
                 else self._plugin_config | self._app_environment
             )
             env = base_env | http01_env
+            dns_timeout = self._get_dns_propagation_timeout()
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
@@ -198,6 +199,7 @@ class LegoCharm(CharmBase):
                 csr=csr.raw.encode(),
                 env=env,
                 plugin=plugin_to_use,
+                dns_propagation_wait=dns_timeout,
             )
         except LEGOError as e:
             logger.error(
@@ -263,6 +265,8 @@ class LegoCharm(CharmBase):
             return "invalid plugin"
         if err := self._validate_acme_ca_certificates_config_option():
             return err
+        if err := self._validate_dns_propagation_timeout():
+            return err
         return ""
 
     def _validate_plugin_config_options(self) -> str:
@@ -294,6 +298,24 @@ class LegoCharm(CharmBase):
             x509.load_pem_x509_certificates(ca_certificate.encode())
         except Exception:
             return "acme-ca-certificates contains invalid PEM data"
+
+        return ""
+
+    def _validate_dns_propagation_timeout(self) -> str:
+        """Validate the dns-propagation-wait config option.
+
+        Returns:
+            str: Error message if invalid, otherwise an empty string.
+        """
+        timeout = self.model.config.get("dns-propagation-wait", None)
+        if timeout is None:
+            return ""
+
+        if not isinstance(timeout, int):
+            return "dns-propagation-wait must be an integer"
+
+        if timeout <= 0:
+            return "dns-propagation-wait must be greater than 0"
 
         return ""
 
@@ -342,6 +364,17 @@ class LegoCharm(CharmBase):
             return content["private-key"], content["email"]
         except SecretNotFoundError:
             return None, None
+
+    def _get_dns_propagation_timeout(self) -> int | None:
+        """Get the dns-propagation-wait config option.
+
+        Returns:
+            int | None: The timeout in seconds, or None if not set.
+        """
+        timeout = self.model.config.get("dns-propagation-wait", None)
+        if not self._validate_dns_propagation_timeout() == "" or not isinstance(timeout, int):
+            return None
+        return timeout
 
     @contextmanager
     def maintenance_status(self, message: str):

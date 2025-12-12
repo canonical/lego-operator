@@ -88,3 +88,9 @@ config:
         This should only be used for ACME servers that are not in the system-wide trusted root list and not operated by a charm.
         Otherwise, use the `receive-ca-cert` relation to get the CAs from the ACME provider charm.
         Example usage: `juju config lego acme-ca-certificate="$(cat /path/to/ca-bundle.pem)"`
+    dns-propagation-wait:
+      type: int
+      description: |
+        DNS propagation timeout in seconds. How long to wait for DNS records to propagate before ACME verification attempts.
+        Must be a positive integer. Useful in environments with slow DNS propagation or caching issues.
+        If not set, LEGO's default timeout will be used.
