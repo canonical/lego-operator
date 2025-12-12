@@ -183,11 +183,11 @@ class TestLegoOperatorCharmCollectStatus:
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
-                "dns-propagation-timeout": -100,
+                "dns-propagation-wait": -100,
             },
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
-        assert out.unit_status == BlockedStatus("dns-propagation-timeout must be greater than 0")
+        assert out.unit_status == BlockedStatus("dns-propagation-wait must be greater than 0")
 
     def test_given_zero_dns_propagation_timeout_when_update_status_then_status_is_blocked(self):
         state = State(
@@ -200,11 +200,11 @@ class TestLegoOperatorCharmCollectStatus:
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
-                "dns-propagation-timeout": 0,
+                "dns-propagation-wait": 0,
             },
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
-        assert out.unit_status == BlockedStatus("dns-propagation-timeout must be greater than 0")
+        assert out.unit_status == BlockedStatus("dns-propagation-wait must be greater than 0")
 
     def test_given_valid_dns_propagation_timeout_when_update_status_then_status_is_active(self):
         state = State(
@@ -217,7 +217,7 @@ class TestLegoOperatorCharmCollectStatus:
                 "server": "https://acme-v02.api.letsencrypt.org/directory",
                 "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
-                "dns-propagation-timeout": 600,
+                "dns-propagation-wait": 600,
             },
         )
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)

@@ -302,20 +302,20 @@ class LegoCharm(CharmBase):
         return ""
 
     def _validate_dns_propagation_timeout(self) -> str:
-        """Validate the dns-propagation-timeout config option.
+        """Validate the dns-propagation-wait config option.
 
         Returns:
             str: Error message if invalid, otherwise an empty string.
         """
-        timeout = self.model.config.get("dns-propagation-timeout", None)
+        timeout = self.model.config.get("dns-propagation-wait", None)
         if timeout is None:
             return ""
 
         if not isinstance(timeout, int):
-            return "dns-propagation-timeout must be an integer"
+            return "dns-propagation-wait must be an integer"
 
         if timeout <= 0:
-            return "dns-propagation-timeout must be greater than 0"
+            return "dns-propagation-wait must be greater than 0"
 
         return ""
 
@@ -366,12 +366,12 @@ class LegoCharm(CharmBase):
             return None, None
 
     def _get_dns_propagation_timeout(self) -> int | None:
-        """Get the dns-propagation-timeout config option.
+        """Get the dns-propagation-wait config option.
 
         Returns:
             int | None: The timeout in seconds, or None if not set.
         """
-        timeout = self.model.config.get("dns-propagation-timeout", None)
+        timeout = self.model.config.get("dns-propagation-wait", None)
         if not self._validate_dns_propagation_timeout() == "" or not isinstance(timeout, int):
             return None
         return timeout
