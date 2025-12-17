@@ -13,8 +13,11 @@ from urllib.parse import urlparse
 
 from charmlibs.interfaces.tls_certificates import (
     Certificate,
+    CertificateError,
+    CertificateRequestErrorCode,
     CertificateSigningRequest,
     ProviderCertificate,
+    ProviderCertificateError,
     TLSCertificatesProvidesV4,
     generate_private_key,
 )
@@ -202,10 +205,23 @@ class LegoCharm(CharmBase):
                 dns_propagation_wait=dns_timeout,
             )
         except LEGOError as e:
+            # Unified error handling for both ACME and non-ACME errors
             logger.error(
-                "An error occurred executing the lego command: %s. \
-                will try again in during the next update status event.",
-                e,
+                "Error occurred (type: %s, code: %s): %s. \
+                Setting error in relation data.",
+                e.type, e.code, e.detail,
+            )
+            error_code, error_name = self._map_lego_error_to_certificate_error(e)
+            self._tls_certificates.set_relation_error(
+                provider_error=ProviderCertificateError(
+                    relation_id=relation_id,
+                    certificate_signing_request=csr,
+                    error=CertificateError(
+                        code=error_code,
+                        name=error_name,
+                        message=e.detail,
+                    ),
+                ),
             )
             return
         end_certificate = self._get_end_certificate(response.certificate)
@@ -516,6 +532,173 @@ class LegoCharm(CharmBase):
                 f.write("\n".join(cert.strip() + "\n" for cert in pem_certs))
         except OSError as e:
             logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
+
+    def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> tuple[int, str]:
+        """Map a LEGOError to a CertificateRequestErrorCode.
+
+        LEGOError is now unified for both ACME and non-ACME errors.
+        Use the type attribute to distinguish between them.
+
+        Mapping policy:
+        - ACME errors (type="acme"): Originate from the CA server's ACME protocol implementation.
+          Map based on the error code derived from the ACME problem type URN.
+        - LEGO errors (type="lego"): Originate from client-side operations including DNS provider
+          configuration/authentication, network issues, validation failures, etc.
+          DNS provider failures are configuration/authentication issues, not domain validation issues.
+
+        Args:
+            lego_error: The LEGOError exception from pylego with attributes:
+                type: "acme" (CA server) or "lego" (client/provider)
+                code: machine-readable error code
+                detail: human-readable error message
+                acme_type: full ACME URN (only for ACME errors)
+                info: raw error dict (may include HTTP status for ACME)
+
+        Returns:
+            tuple[int, str]: Error code (CertificateRequestErrorCode enum value) and error name.
+        """
+        error_type = lego_error.type
+        error_code = lego_error.code.lower()
+        error_message = lego_error.detail.lower()
+
+        # Handle ACME errors (type == "acme")
+        # These are errors from the CA server following RFC 8555
+        if error_type == "acme":
+            # Rate limiting from CA server
+            if error_code in ["ratelimited", "toomanyregistrationsforipaddress"]:
+                return (
+                    CertificateRequestErrorCode.SERVER_NOT_AVAILABLE,
+                    "RATE_LIMITED",
+                )
+
+            # Authorization failures from CA server
+            if error_code in ["unauthorized", "accountdoesnotexist"]:
+                return (
+                    CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
+                    "AUTHORIZATION_FAILED",
+                )
+
+            # Challenge validation failures reported by CA server
+            if error_code in ["incorrectresponse", "dns", "connection"]:
+                return (
+                    CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
+                    "CHALLENGE_FAILED",
+                )
+
+            # Domain/identifier rejection by CA server
+            if error_code in ["rejectedidentifier", "unsupportedidentifier"]:
+                return (
+                    CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
+                    "DOMAIN_NOT_ALLOWED",
+                )
+
+            # Invalid CSR rejected by CA server
+            if error_code in ["badcsr", "badpublickey"]:
+                return (
+                    CertificateRequestErrorCode.OTHER,
+                    "INVALID_CSR",
+                )
+
+            # Default for unrecognized ACME errors
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "ACME_ERROR",
+            )
+
+        # Handle non-ACME errors (type == "lego")
+        # These are client-side errors: configuration, DNS provider, network, validation, etc.
+        
+        # Invalid arguments to lego command
+        if error_code == "invalid_arguments":
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "INVALID_ARGUMENTS",
+            )
+
+        # Environment/configuration issues
+        if error_code == "invalid_environment":
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "CONFIGURATION_ERROR",
+            )
+
+        # Private key parsing/validation failure
+        if error_code == "invalid_private_key":
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "INVALID_PRIVATE_KEY",
+            )
+
+        # CSR parsing/validation failure (client-side)
+        if error_code == "invalid_csr":
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "INVALID_CSR",
+            )
+
+        # DNS provider configuration or authentication failure
+        # This is NOT a domain validation issue but a provider setup problem
+        if error_code == "dns_provider_failed":
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "DNS_PROVIDER_FAILED",
+            )
+
+        # Generic certificate request failure - requires message inspection
+        if error_code == "certificate_request_failed":
+            # Check for network-related issues
+            if any(keyword in error_message for keyword in [
+                "connection", "timeout", "unreachable", "network",
+                "dial", "no route", "connection refused", "tls handshake"
+            ]):
+                return (
+                    CertificateRequestErrorCode.SERVER_NOT_AVAILABLE,
+                    "NETWORK_ERROR",
+                )
+            
+            # Check for authentication/authorization issues with provider/service
+            if any(keyword in error_message for keyword in [
+                "auth", "credential", "unauthorized", "forbidden",
+                "permission", "permission denied", "invalid api key", "invalid token"
+            ]):
+                return (
+                    CertificateRequestErrorCode.OTHER,
+                    "PROVIDER_AUTH_FAILED",
+                )
+            
+            # Generic certificate request failure
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "CERTIFICATE_REQUEST_FAILED",
+            )
+
+        # Fallback: analyze error message for unrecognized error codes
+        
+        # Network issues
+        if any(keyword in error_message for keyword in [
+            "connection", "timeout", "unreachable", "network",
+            "dial", "tls handshake", "no route", "connection refused"
+        ]):
+            return (
+                CertificateRequestErrorCode.SERVER_NOT_AVAILABLE,
+                "NETWORK_ERROR",
+            )
+        
+        # Authentication/authorization issues
+        if any(keyword in error_message for keyword in [
+            "auth", "credential", "unauthorized", "forbidden",
+            "permission", "permission denied", "invalid api key", "invalid token"
+        ]):
+            return (
+                CertificateRequestErrorCode.OTHER,
+                "PROVIDER_AUTH_FAILED",
+            )
+
+        # Default for unrecognized errors
+        return (
+            CertificateRequestErrorCode.OTHER,
+            "OTHER",
+        )
 
 
 def get_env_var(env_var: str) -> str | None:
