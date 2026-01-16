@@ -535,6 +535,23 @@ class LegoCharm(CharmBase):
         except OSError as e:
             logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
 
+    def _is_ip_rejection(self, lego_error: LEGOError) -> bool:
+        """Check if the error is an IP address rejection based on subproblems.
+
+        Args:
+            lego_error: The LEGO error to check
+
+        Returns:
+            bool: True if any subproblem indicates an IP address rejection
+        """
+        if not lego_error.subproblems:
+            return False
+        for subproblem in lego_error.subproblems:
+            identifier = subproblem.get("identifier", {})
+            if identifier.get("type") == "ip":
+                return True
+        return False
+
     def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> tuple[int, str]:
         """Map a LEGOError to a CertificateRequestErrorCode.
 
@@ -583,8 +600,15 @@ class LegoCharm(CharmBase):
                     "CHALLENGE_FAILED",
                 )
 
-            # Domain not allowed by policy
+            # Rejected identifier - check subproblems for more specific error
             if lego_error.code in ["rejectedIdentifier", "unsupportedIdentifier"]:
+                # Check if this is an IP address rejection
+                if self._is_ip_rejection(lego_error):
+                    return (
+                        CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
+                        "IP_NOT_ALLOWED",
+                    )
+                # Default to domain not allowed
                 return (
                     CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
                     "DOMAIN_NOT_ALLOWED",
