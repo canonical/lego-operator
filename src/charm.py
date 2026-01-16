@@ -536,21 +536,26 @@ class LegoCharm(CharmBase):
             logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
 
     def _is_ip_rejection(self, lego_error: LEGOError) -> bool:
-        """Check if the error is an IP address rejection based on subproblems.
+        """Check if the error is an IP address rejection based on subproblems or detail.
 
         Args:
             lego_error: The LEGO error to check
 
         Returns:
-            bool: True if any subproblem indicates an IP address rejection
+            bool: True if any subproblem or detail indicates an IP address rejection
         """
-        if not lego_error.subproblems:
-            return False
-        for subproblem in lego_error.subproblems:
-            identifier = subproblem.get("identifier", {})
-            if identifier.get("type") == "ip":
-                return True
-        return False
+        # First check subproblems (present when multiple identifiers are involved)
+        if lego_error.subproblems:
+            for subproblem in lego_error.subproblems:
+                identifier = subproblem.get("identifier", {})
+                if identifier.get("type") == "ip":
+                    return True
+
+        # Fallback: check the detail message for IP-related keywords
+        # This handles cases where there's only one identifier and subproblems is empty
+        detail_lower = lego_error.detail.lower()
+        ip_keywords = ["ip address", "ip-address", "ipaddress", "ip identifier"]
+        return any(keyword in detail_lower for keyword in ip_keywords)
 
     def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> tuple[int, str]:
         """Map a LEGOError to a CertificateRequestErrorCode.
