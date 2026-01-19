@@ -567,7 +567,7 @@ class TestLegoOperatorCharmConfigure:
         
         # Verify the error code and name are correct for IP rejection
         from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
-        assert provider_error.error.code == CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
+        assert provider_error.error.code == CertificateRequestErrorCode.IP_NOT_ALLOWED
         assert provider_error.error.name == "IP_NOT_ALLOWED"
         assert provider_error.relation_id == 1
 
@@ -682,5 +682,5 @@ class TestLegoOperatorCharmConfigure:
         provider_error = call_args["provider_error"]
         
         from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
-        assert provider_error.error.code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
-        assert provider_error.error.name == "NETWORK_ERROR"
+        assert provider_error.error.code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
+        assert provider_error.error.name == "SERVER_NOT_AVAILABLE"

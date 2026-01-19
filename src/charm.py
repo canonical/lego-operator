@@ -18,6 +18,7 @@ from charmlibs.interfaces.tls_certificates import (
     CertificateSigningRequest,
     ProviderCertificate,
     ProviderCertificateError,
+    RequirerCertificateRequest,
     TLSCertificatesProvidesV4,
     generate_private_key,
 )
@@ -144,6 +145,8 @@ class LegoCharm(CharmBase):
         """Attempt to fulfill all certificate requests."""
         certificate_requests = self._tls_certificates.get_certificate_requests()
         provided_certificates = self._tls_certificates.get_provider_certificates()
+        provider_errors = self._tls_certificates.get_provider_certificate_errors()
+        
         certificate_pair_map = {
             csr: list(
                 filter(
@@ -154,15 +157,35 @@ class LegoCharm(CharmBase):
             )
             for csr in certificate_requests
         }
+        
         for certificate_request, assigned_certificates in certificate_pair_map.items():
-            if not assigned_certificates:
-                with self.maintenance_status(
-                    f"processing certificate request for relation {certificate_request.certificate_signing_request.common_name}"
+            if assigned_certificates:
+                continue
+            has_persistent_error = False
+            for provider_error in provider_errors:
+                if (
+                    provider_error.relation_id == certificate_request.relation_id
+                    and provider_error.certificate_signing_request.raw.strip()
+                    == certificate_request.certificate_signing_request.raw.strip()
                 ):
-                    self._generate_signed_certificate(
-                        csr=certificate_request.certificate_signing_request,
-                        relation_id=certificate_request.relation_id,
-                    )
+                    if provider_error.error.code != CertificateRequestErrorCode.SERVER_NOT_AVAILABLE:
+                        has_persistent_error = True
+                        break
+            
+            if has_persistent_error:
+                logger.info(
+                    f"Skipping certificate request with persistent error: "
+                    f"{certificate_request.certificate_signing_request.common_name}"
+                )
+                continue
+                
+            with self.maintenance_status(
+                f"processing certificate request for relation {certificate_request.certificate_signing_request.common_name}"
+            ):
+                self._generate_signed_certificate(
+                    csr=certificate_request.certificate_signing_request,
+                    relation_id=certificate_request.relation_id,
+                )
 
     def _configure_send_ca_certificates(self):
         """Distribute all used issuer certificates to requirers."""
@@ -205,23 +228,21 @@ class LegoCharm(CharmBase):
                 dns_propagation_wait=dns_timeout,
             )
         except LEGOError as e:
-            # Unified error handling for both ACME and non-ACME errors
             logger.error(
-                "Error occurred (type: %s, code: %s): %s. \
-                Setting error in relation data.",
-                e.type,
-                e.code,
-                e.detail,
+                "Error occurred while obtaining certificate for domain for request %s, setting relation data.",
+                csr.raw,
             )
-            error_code, error_name = self._map_lego_error_to_certificate_error(e)
+            error_code = self._map_lego_error_to_certificate_error(e)
             self._tls_certificates.set_relation_error(
                 provider_error=ProviderCertificateError(
                     relation_id=relation_id,
                     certificate_signing_request=csr,
                     error=CertificateError(
                         code=error_code,
-                        name=error_name,
+                        name=error_code.name,
                         message=e.detail,
+                        reason=e.acme_type or "",
+                        endpoint=self._server or "",
                     ),
                 ),
             )
@@ -544,55 +565,40 @@ class LegoCharm(CharmBase):
         Returns:
             bool: True if any subproblem or detail indicates an IP address rejection
         """
-        # First check subproblems (present when multiple identifiers are involved)
         if lego_error.subproblems:
             for subproblem in lego_error.subproblems:
                 identifier = subproblem.get("identifier", {})
                 if identifier.get("type") == "ip":
                     return True
 
-        # Fallback: check the detail message for IP-related keywords
-        # This handles cases where there's only one identifier and subproblems is empty
         detail_lower = lego_error.detail.lower()
         ip_keywords = ["ip address", "ip-address", "ipaddress", "ip identifier"]
         return any(keyword in detail_lower for keyword in ip_keywords)
 
-    def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> tuple[int, str]:
+    def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> CertificateRequestErrorCode:
         """Map a LEGOError to a CertificateRequestErrorCode.
 
-        Mapping philosophy:
+        Mapping logic:
         The error codes reflect what the certificate requirer needs to know:
 
         - SERVER_NOT_AVAILABLE: Service temporarily unavailable (rate limits, network issues)
         - DOMAIN_NOT_ALLOWED: Domain ownership cannot be validated or is not permitted
-        - OTHER: Configuration, authentication, or validation errors needing operator intervention
-
-        With Pylego v0.1.33+, all errors have reliable structured codes, eliminating the need
-        for fragile error message parsing.
+        - IP_NOT_ALLOWED: Used IP addresses cannot be validated or are not permitted
+        - OTHER: Configuration, authentication, or validation errors
 
         Args:
-            lego_error: LEGOError with attributes: type, code, detail, acme_type, status
+            lego_error
 
         Returns:
-            tuple[int, str]: Error code and human-readable error name
+            CertificateRequestErrorCode
         """
-        # Network errors - detected by Pylego using Go's net package type system
         if lego_error.code == "network_error":
-            return (
-                CertificateRequestErrorCode.SERVER_NOT_AVAILABLE,
-                "NETWORK_ERROR",
-            )
+            return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
-        # ACME errors from CA server
         if lego_error.type == "acme":
-            # Rate limiting
             if lego_error.code in ["rateLimited", "tooManyRegistrationsForIpAddress"]:
-                return (
-                    CertificateRequestErrorCode.SERVER_NOT_AVAILABLE,
-                    "RATE_LIMITED",
-                )
+                return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
-            # Authorization/challenge failures
             if lego_error.code in [
                 "unauthorized",
                 "accountDoesNotExist",
@@ -600,62 +606,18 @@ class LegoCharm(CharmBase):
                 "dns",
                 "connection",
             ]:
-                return (
-                    CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
-                    "CHALLENGE_FAILED",
-                )
+                return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
 
-            # Rejected identifier - check subproblems for more specific error
             if lego_error.code in ["rejectedIdentifier", "unsupportedIdentifier"]:
-                # Check if this is an IP address rejection
                 if self._is_ip_rejection(lego_error):
-                    return (
-                        CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
-                        "IP_NOT_ALLOWED",
-                    )
-                # Default to domain not allowed
-                return (
-                    CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED,
-                    "DOMAIN_NOT_ALLOWED",
-                )
+                    return CertificateRequestErrorCode.IP_NOT_ALLOWED
+                return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
 
-            # CSR validation failed at CA
             if lego_error.code in ["badCSR", "badPublicKey"]:
-                return (
-                    CertificateRequestErrorCode.OTHER,
-                    "INVALID_CSR",
-                )
+                return CertificateRequestErrorCode.OTHER
+            return CertificateRequestErrorCode.OTHER
 
-            # Other ACME errors
-            return (
-                CertificateRequestErrorCode.OTHER,
-                "ACME_ERROR",
-            )
-
-        # LEGO client-side errors - use reliable error codes
-
-        lego_error_map = {
-            "invalid_csr": (CertificateRequestErrorCode.OTHER, "INVALID_CSR"),
-            "invalid_private_key": (CertificateRequestErrorCode.OTHER, "INVALID_PRIVATE_KEY"),
-            "invalid_arguments": (CertificateRequestErrorCode.OTHER, "INVALID_ARGUMENTS"),
-            "invalid_environment": (CertificateRequestErrorCode.OTHER, "CONFIGURATION_ERROR"),
-            "dns_provider_failed": (CertificateRequestErrorCode.OTHER, "DNS_PROVIDER_FAILED"),
-            "lego_client_creation_failed": (CertificateRequestErrorCode.OTHER, "CLIENT_ERROR"),
-            "account_registration_failed": (CertificateRequestErrorCode.OTHER, "ACCOUNT_ERROR"),
-            "certificate_obtain_failed": (
-                CertificateRequestErrorCode.OTHER,
-                "CERTIFICATE_REQUEST_FAILED",
-            ),
-        }
-
-        if lego_error.code in lego_error_map:
-            return lego_error_map[lego_error.code]
-
-        # Unknown error
-        return (
-            CertificateRequestErrorCode.OTHER,
-            "OTHER",
-        )
+        return CertificateRequestErrorCode.OTHER
 
 
 def get_env_var(env_var: str) -> str | None:
