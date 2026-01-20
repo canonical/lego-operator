@@ -36,6 +36,7 @@ class TestLegoOperatorCharmConfigure:
         self.ctx = Context(LegoCharm)
 
     @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificate_errors")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate")
     @patch("charm.generate_private_key")
@@ -43,9 +44,11 @@ class TestLegoOperatorCharmConfigure:
         self,
         mock_generate_private_key: MagicMock,
         mock_set_relation_certificate: MagicMock,
-        mock_get_outstanding_certificate_requests: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_get_provider_certificate_errors: MagicMock,
         mock_pylego: MagicMock,
     ):
+        mock_get_provider_certificate_errors.return_value = []
         mock_account_pk = generate_private_key()
         mock_generate_private_key.return_value = mock_account_pk
         csr_pk = generate_private_key()
@@ -55,7 +58,7 @@ class TestLegoOperatorCharmConfigure:
         cert = generate_certificate(csr, issuer, issuer_pk, validity=timedelta(days=365))
         chain = [cert, issuer]
 
-        mock_get_outstanding_certificate_requests.return_value = [
+        mock_get_certificate_requests.return_value = [
             RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=True)
         ]
 

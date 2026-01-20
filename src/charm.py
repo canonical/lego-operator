@@ -142,7 +142,16 @@ class LegoCharm(CharmBase):
         self._write_acme_ca_bundle_file(combined_certs)
 
     def _configure_certificates(self):
-        """Attempt to fulfill all certificate requests."""
+        """Attempt to fulfill all certificate requests with intelligent retry logic.
+        
+        This method implements retry logic that distinguishes between transient and persistent errors:
+        - Transient errors (SERVER_NOT_AVAILABLE): Network issues, rate limits, DNS propagation delays
+          These requests will be retried on the next update-status event
+        - Persistent errors (DOMAIN_NOT_ALLOWED, IP_NOT_ALLOWED, OTHER): Configuration/validation failures
+          These requests will NOT be retried to avoid unnecessary load on ACME servers
+        
+        The retry decision is based on previously set error codes in the relation data.
+        """
         certificate_requests = self._tls_certificates.get_certificate_requests()
         provided_certificates = self._tls_certificates.get_provider_certificates()
         provider_errors = self._tls_certificates.get_provider_certificate_errors()
@@ -158,21 +167,23 @@ class LegoCharm(CharmBase):
             for csr in certificate_requests
         }
         
+        # Build a set of (relation_id, csr) tuples with persistent errors for efficient lookup
+        persistent_error_requests = {
+            (error.relation_id, error.certificate_signing_request.raw)
+            for error in provider_errors
+            if error.error.code != CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
+        }
+        
         for certificate_request, assigned_certificates in certificate_pair_map.items():
             if assigned_certificates:
                 continue
-            has_persistent_error = False
-            for provider_error in provider_errors:
-                if (
-                    provider_error.relation_id == certificate_request.relation_id
-                    and provider_error.certificate_signing_request.raw.strip()
-                    == certificate_request.certificate_signing_request.raw.strip()
-                ):
-                    if provider_error.error.code != CertificateRequestErrorCode.SERVER_NOT_AVAILABLE:
-                        has_persistent_error = True
-                        break
             
-            if has_persistent_error:
+            # Check if this request has a persistent error (without .strip() to ensure exact match)
+            request_key = (
+                certificate_request.relation_id,
+                certificate_request.certificate_signing_request.raw,
+            )
+            if request_key in persistent_error_requests:
                 logger.info(
                     f"Skipping certificate request with persistent error: "
                     f"{certificate_request.certificate_signing_request.common_name}"
@@ -596,21 +607,31 @@ class LegoCharm(CharmBase):
             return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
         if lego_error.type == "acme":
+            # Rate limits are typically 24-hour windows (e.g., Let's Encrypt)
+            # Retrying will only succeed after the window expires
             if lego_error.code in ["rateLimited", "tooManyRegistrationsForIpAddress"]:
                 return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
+            # DNS errors are often transient (propagation delays, temporary outages)
+            # Connection errors from ACME server to validation endpoint are also often transient
+            if lego_error.code in ["dns", "connection"]:
+                return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
+
+            # These indicate authorization/validation failures
             if lego_error.code in [
                 "unauthorized",
                 "accountDoesNotExist",
                 "incorrectResponse",
-                "dns",
-                "connection",
             ]:
                 return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
 
             if lego_error.code in ["rejectedIdentifier", "unsupportedIdentifier"]:
                 if self._is_ip_rejection(lego_error):
                     return CertificateRequestErrorCode.IP_NOT_ALLOWED
+                # Check for wildcard domain rejection
+                detail_lower = lego_error.detail.lower()
+                if "wildcard" in detail_lower:
+                    return CertificateRequestErrorCode.WILDCARD_NOT_ALLOWED
                 return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
 
             if lego_error.code in ["badCSR", "badPublicKey"]:
