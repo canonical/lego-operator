@@ -142,15 +142,13 @@ class LegoCharm(CharmBase):
         self._write_acme_ca_bundle_file(combined_certs)
 
     def _configure_certificates(self):
-        """Attempt to fulfill all certificate requests with intelligent retry logic.
+        """Attempt to fulfill all certificate requests.
         
         This method implements retry logic that distinguishes between transient and persistent errors:
         - Transient errors (SERVER_NOT_AVAILABLE): Network issues, rate limits, DNS propagation delays
-          These requests will be retried on the next update-status event
+          These requests will be retried on the next hook
         - Persistent errors (DOMAIN_NOT_ALLOWED, IP_NOT_ALLOWED, OTHER): Configuration/validation failures
-          These requests will NOT be retried to avoid unnecessary load on ACME servers
-        
-        The retry decision is based on previously set error codes in the relation data.
+          These requests will NOT be retried
         """
         certificate_requests = self._tls_certificates.get_certificate_requests()
         provided_certificates = self._tls_certificates.get_provider_certificates()
@@ -167,7 +165,6 @@ class LegoCharm(CharmBase):
             for csr in certificate_requests
         }
         
-        # Build a set of (relation_id, csr) tuples with persistent errors for efficient lookup
         persistent_error_requests = {
             (error.relation_id, error.certificate_signing_request.raw)
             for error in provider_errors
@@ -178,7 +175,6 @@ class LegoCharm(CharmBase):
             if assigned_certificates:
                 continue
             
-            # Check if this request has a persistent error (without .strip() to ensure exact match)
             request_key = (
                 certificate_request.relation_id,
                 certificate_request.certificate_signing_request.raw,
@@ -589,9 +585,6 @@ class LegoCharm(CharmBase):
     def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> CertificateRequestErrorCode:
         """Map a LEGOError to a CertificateRequestErrorCode.
 
-        Mapping logic:
-        The error codes reflect what the certificate requirer needs to know:
-
         - SERVER_NOT_AVAILABLE: Service temporarily unavailable (rate limits, network issues)
         - DOMAIN_NOT_ALLOWED: Domain ownership cannot be validated or is not permitted
         - IP_NOT_ALLOWED: Used IP addresses cannot be validated or are not permitted
@@ -607,17 +600,12 @@ class LegoCharm(CharmBase):
             return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
         if lego_error.type == "acme":
-            # Rate limits are typically 24-hour windows (e.g., Let's Encrypt)
-            # Retrying will only succeed after the window expires
             if lego_error.code in ["rateLimited", "tooManyRegistrationsForIpAddress"]:
                 return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
-            # DNS errors are often transient (propagation delays, temporary outages)
-            # Connection errors from ACME server to validation endpoint are also often transient
             if lego_error.code in ["dns", "connection"]:
                 return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
-            # These indicate authorization/validation failures
             if lego_error.code in [
                 "unauthorized",
                 "accountDoesNotExist",
@@ -628,7 +616,6 @@ class LegoCharm(CharmBase):
             if lego_error.code in ["rejectedIdentifier", "unsupportedIdentifier"]:
                 if self._is_ip_rejection(lego_error):
                     return CertificateRequestErrorCode.IP_NOT_ALLOWED
-                # Check for wildcard domain rejection
                 detail_lower = lego_error.detail.lower()
                 if "wildcard" in detail_lower:
                     return CertificateRequestErrorCode.WILDCARD_NOT_ALLOWED
