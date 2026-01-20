@@ -480,7 +480,6 @@ class TestLegoOperatorCharmConfigure:
             metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
         )
 
-        # Create a temporary file to simulate the CA bundle
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pem") as f:
             f.write(str(ca_cert))
             ca_file_path = f.name
@@ -535,7 +534,6 @@ class TestLegoOperatorCharmConfigure:
             RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
         ]
 
-        # Simulate ACME rejectedIdentifier error for IP address
         mock_pylego.side_effect = LEGOError(
             detail="Error creating new order :: Cannot issue for IP address",
             type="acme",
@@ -563,12 +561,10 @@ class TestLegoOperatorCharmConfigure:
 
         self.ctx.run(self.ctx.on.update_status(), state)
 
-        # Verify set_relation_error was called
         assert mock_set_relation_error.called
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
         
-        # Verify the error code and name are correct for IP rejection
         from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
         assert provider_error.error.code == CertificateRequestErrorCode.IP_NOT_ALLOWED
         assert provider_error.error.name == "IP_NOT_ALLOWED"
@@ -595,7 +591,6 @@ class TestLegoOperatorCharmConfigure:
             RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
         ]
 
-        # Simulate ACME rejectedIdentifier error for domain (no IP keywords)
         mock_pylego.side_effect = LEGOError(
             detail="Domain example.com is not allowed",
             type="acme",
@@ -623,7 +618,6 @@ class TestLegoOperatorCharmConfigure:
 
         self.ctx.run(self.ctx.on.update_status(), state)
 
-        # Verify set_relation_error was called with DOMAIN_NOT_ALLOWED
         assert mock_set_relation_error.called
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
@@ -653,7 +647,6 @@ class TestLegoOperatorCharmConfigure:
             RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
         ]
 
-        # Simulate network error detected by Pylego
         mock_pylego.side_effect = LEGOError(
             detail="dial tcp 127.0.0.1:443: connect: connection refused",
             type="lego",
@@ -679,7 +672,6 @@ class TestLegoOperatorCharmConfigure:
 
         self.ctx.run(self.ctx.on.update_status(), state)
 
-        # Verify set_relation_error was called with SERVER_NOT_AVAILABLE
         assert mock_set_relation_error.called
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
