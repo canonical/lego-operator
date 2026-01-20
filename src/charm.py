@@ -18,7 +18,6 @@ from charmlibs.interfaces.tls_certificates import (
     CertificateSigningRequest,
     ProviderCertificate,
     ProviderCertificateError,
-    RequirerCertificateRequest,
     TLSCertificatesProvidesV4,
     generate_private_key,
 )
@@ -143,7 +142,7 @@ class LegoCharm(CharmBase):
 
     def _configure_certificates(self):
         """Attempt to fulfill all certificate requests.
-        
+
         This method implements retry logic that distinguishes between transient and persistent errors:
         - Transient errors (SERVER_NOT_AVAILABLE): Network issues, rate limits, DNS propagation delays
           These requests will be retried on the next hook
@@ -153,7 +152,7 @@ class LegoCharm(CharmBase):
         certificate_requests = self._tls_certificates.get_certificate_requests()
         provided_certificates = self._tls_certificates.get_provider_certificates()
         provider_errors = self._tls_certificates.get_provider_certificate_errors()
-        
+
         certificate_pair_map = {
             csr: list(
                 filter(
@@ -164,28 +163,28 @@ class LegoCharm(CharmBase):
             )
             for csr in certificate_requests
         }
-        
+
         persistent_error_requests = {
             (error.relation_id, error.certificate_signing_request.raw)
             for error in provider_errors
             if error.error.code != CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
         }
-        
+
         for certificate_request, assigned_certificates in certificate_pair_map.items():
             if assigned_certificates:
                 continue
-            
+
             request_key = (
                 certificate_request.relation_id,
                 certificate_request.certificate_signing_request.raw,
             )
             if request_key in persistent_error_requests:
                 logger.info(
-                    f"Skipping certificate request with persistent error: "
-                    f"{certificate_request.certificate_signing_request.common_name}"
+                    "Skipping certificate request with persistent error: %s",
+                    certificate_request.certificate_signing_request.common_name,
                 )
                 continue
-                
+
             with self.maintenance_status(
                 f"processing certificate request for relation {certificate_request.certificate_signing_request.common_name}"
             ):
@@ -582,7 +581,9 @@ class LegoCharm(CharmBase):
         ip_keywords = ["ip address", "ip-address", "ipaddress", "ip identifier"]
         return any(keyword in detail_lower for keyword in ip_keywords)
 
-    def _map_lego_error_to_certificate_error(self, lego_error: LEGOError) -> CertificateRequestErrorCode:
+    def _map_lego_error_to_certificate_error(
+        self, lego_error: LEGOError
+    ) -> CertificateRequestErrorCode:
         """Map a LEGOError to a CertificateRequestErrorCode.
 
         - SERVER_NOT_AVAILABLE: Service temporarily unavailable (rate limits, network issues)
@@ -591,7 +592,7 @@ class LegoCharm(CharmBase):
         - OTHER: Configuration, authentication, or validation errors
 
         Args:
-            lego_error
+            lego_error: The LEGO error to map to a certificate error code
 
         Returns:
             CertificateRequestErrorCode

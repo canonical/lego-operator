@@ -564,8 +564,9 @@ class TestLegoOperatorCharmConfigure:
         assert mock_set_relation_error.called
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
-        
+
         from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
+
         assert provider_error.error.code == CertificateRequestErrorCode.IP_NOT_ALLOWED
         assert provider_error.error.name == "IP_NOT_ALLOWED"
         assert provider_error.relation_id == 1
@@ -621,8 +622,9 @@ class TestLegoOperatorCharmConfigure:
         assert mock_set_relation_error.called
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
-        
+
         from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
+
         assert provider_error.error.code == CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
         assert provider_error.error.name == "DOMAIN_NOT_ALLOWED"
 
@@ -675,7 +677,8 @@ class TestLegoOperatorCharmConfigure:
         assert mock_set_relation_error.called
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
-        
+
         from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
+
         assert provider_error.error.code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
         assert provider_error.error.name == "SERVER_NOT_AVAILABLE"
