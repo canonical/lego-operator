@@ -573,8 +573,7 @@ class LegoCharm(CharmBase):
         """
         if lego_error.subproblems:
             for subproblem in lego_error.subproblems:
-                identifier = subproblem.get("identifier", {})
-                if identifier.get("type") == "ip":
+                if subproblem.identifier.type == "ip":
                     return True
 
         detail_lower = lego_error.detail.lower()

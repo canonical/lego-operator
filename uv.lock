@@ -383,7 +383,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "charmlibs-interfaces-tls-certificates", specifier = "~=1.0" },
+    { name = "charmlibs-interfaces-tls-certificates", specifier = "~=1.4" },
     { name = "cosl" },
     { name = "cryptography" },
     { name = "ops" },
