@@ -13,8 +13,11 @@ from urllib.parse import urlparse
 
 from charmlibs.interfaces.tls_certificates import (
     Certificate,
+    CertificateError,
+    CertificateRequestErrorCode,
     CertificateSigningRequest,
     ProviderCertificate,
+    ProviderCertificateError,
     TLSCertificatesProvidesV4,
     generate_private_key,
 )
@@ -138,9 +141,18 @@ class LegoCharm(CharmBase):
         self._write_acme_ca_bundle_file(combined_certs)
 
     def _configure_certificates(self):
-        """Attempt to fulfill all certificate requests."""
+        """Attempt to fulfill all certificate requests.
+
+        This method implements retry logic that distinguishes between transient and persistent errors:
+        - Transient errors (SERVER_NOT_AVAILABLE): Network issues, rate limits, DNS propagation delays
+          These requests will be retried on the next hook
+        - Persistent errors (DOMAIN_NOT_ALLOWED, IP_NOT_ALLOWED, OTHER): Configuration/validation failures
+          These requests will NOT be retried
+        """
         certificate_requests = self._tls_certificates.get_certificate_requests()
         provided_certificates = self._tls_certificates.get_provider_certificates()
+        provider_errors = self._tls_certificates.get_provider_certificate_errors()
+
         certificate_pair_map = {
             csr: list(
                 filter(
@@ -151,15 +163,35 @@ class LegoCharm(CharmBase):
             )
             for csr in certificate_requests
         }
+
+        persistent_error_requests = {
+            (error.relation_id, error.certificate_signing_request.raw)
+            for error in provider_errors
+            if error.error.code != CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
+        }
+
         for certificate_request, assigned_certificates in certificate_pair_map.items():
-            if not assigned_certificates:
-                with self.maintenance_status(
-                    f"processing certificate request for relation {certificate_request.certificate_signing_request.common_name}"
-                ):
-                    self._generate_signed_certificate(
-                        csr=certificate_request.certificate_signing_request,
-                        relation_id=certificate_request.relation_id,
-                    )
+            if assigned_certificates:
+                continue
+
+            request_key = (
+                certificate_request.relation_id,
+                certificate_request.certificate_signing_request.raw,
+            )
+            if request_key in persistent_error_requests:
+                logger.info(
+                    "Skipping certificate request with persistent error: %s",
+                    certificate_request.certificate_signing_request.common_name,
+                )
+                continue
+
+            with self.maintenance_status(
+                f"processing certificate request for relation {certificate_request.certificate_signing_request.common_name}"
+            ):
+                self._generate_signed_certificate(
+                    csr=certificate_request.certificate_signing_request,
+                    relation_id=certificate_request.relation_id,
+                )
 
     def _configure_send_ca_certificates(self):
         """Distribute all used issuer certificates to requirers."""
@@ -203,9 +235,22 @@ class LegoCharm(CharmBase):
             )
         except LEGOError as e:
             logger.error(
-                "An error occurred executing the lego command: %s. \
-                will try again in during the next update status event.",
-                e,
+                "Error occurred while obtaining certificate for domain for request %s, setting relation data.",
+                csr.raw,
+            )
+            error_code = self._map_lego_error_to_certificate_error(e)
+            self._tls_certificates.set_relation_error(
+                provider_error=ProviderCertificateError(
+                    relation_id=relation_id,
+                    certificate_signing_request=csr,
+                    error=CertificateError(
+                        code=error_code,
+                        name=error_code.name,
+                        message=e.detail,
+                        reason=e.acme_type or "",
+                        endpoint=self._server or "",
+                    ),
+                ),
             )
             return
         end_certificate = self._get_end_certificate(response.certificate)
@@ -516,6 +561,71 @@ class LegoCharm(CharmBase):
                 f.write("\n".join(cert.strip() + "\n" for cert in pem_certs))
         except OSError as e:
             logger.warning("failed to write ACME CA bundle at %s: %s", path, e)
+
+    def _is_ip_rejection(self, lego_error: LEGOError) -> bool:
+        """Check if the error is an IP address rejection based on subproblems or detail.
+
+        Args:
+            lego_error: The LEGO error to check
+
+        Returns:
+            bool: True if any subproblem or detail indicates an IP address rejection
+        """
+        if lego_error.subproblems:
+            for subproblem in lego_error.subproblems:
+                if subproblem.identifier.type == "ip":
+                    return True
+
+        detail_lower = lego_error.detail.lower()
+        ip_keywords = ["ip address", "ip-address", "ipaddress", "ip identifier"]
+        return any(keyword in detail_lower for keyword in ip_keywords)
+
+    def _map_lego_error_to_certificate_error(
+        self, lego_error: LEGOError
+    ) -> CertificateRequestErrorCode:
+        """Map a LEGOError to a CertificateRequestErrorCode.
+
+        - SERVER_NOT_AVAILABLE: Service temporarily unavailable (rate limits, network issues)
+        - DOMAIN_NOT_ALLOWED: Domain ownership cannot be validated or is not permitted
+        - IP_NOT_ALLOWED: Used IP addresses cannot be validated or are not permitted
+        - OTHER: Configuration, authentication, or validation errors
+
+        Args:
+            lego_error: The LEGO error to map to a certificate error code
+
+        Returns:
+            CertificateRequestErrorCode
+        """
+        if lego_error.code == "network_error":
+            return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
+
+        if lego_error.type == "acme":
+            if lego_error.code in ["rateLimited", "tooManyRegistrationsForIpAddress"]:
+                return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
+
+            if lego_error.code in ["dns", "connection"]:
+                return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
+
+            if lego_error.code in [
+                "unauthorized",
+                "accountDoesNotExist",
+                "incorrectResponse",
+            ]:
+                return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
+
+            if lego_error.code in ["rejectedIdentifier", "unsupportedIdentifier"]:
+                if self._is_ip_rejection(lego_error):
+                    return CertificateRequestErrorCode.IP_NOT_ALLOWED
+                detail_lower = lego_error.detail.lower()
+                if "wildcard" in detail_lower:
+                    return CertificateRequestErrorCode.WILDCARD_NOT_ALLOWED
+                return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
+
+            if lego_error.code in ["badCSR", "badPublicKey"]:
+                return CertificateRequestErrorCode.OTHER
+            return CertificateRequestErrorCode.OTHER
+
+        return CertificateRequestErrorCode.OTHER
 
 
 def get_env_var(env_var: str) -> str | None:
