@@ -144,9 +144,9 @@ class LegoCharm(CharmBase):
         """Attempt to fulfill all certificate requests.
 
         This method implements retry logic that distinguishes between transient and persistent errors:
-        - Transient errors (SERVER_NOT_AVAILABLE): Network issues, rate limits, DNS propagation delays
+        - Transient errors (SERVER_NOT_AVAILABLE): Network issues, connection failures
           These requests will be retried on the next hook
-        - Persistent errors (DOMAIN_NOT_ALLOWED, IP_NOT_ALLOWED, OTHER): Configuration/validation failures
+        - Persistent errors (DOMAIN_NOT_ALLOWED, IP_NOT_ALLOWED, OTHER): All other errors
           These requests will NOT be retried
         """
         certificate_requests = self._tls_certificates.get_certificate_requests()
@@ -179,9 +179,9 @@ class LegoCharm(CharmBase):
                 certificate_request.certificate_signing_request.raw,
             )
             if request_key in persistent_error_requests:
-                logger.info(
+                logger.debug(
                     "Skipping certificate request with persistent error: %s",
-                    certificate_request.certificate_signing_request.common_name,
+                    certificate_request.certificate_signing_request.raw,
                 )
                 continue
 
@@ -235,7 +235,7 @@ class LegoCharm(CharmBase):
             )
         except LEGOError as e:
             logger.error(
-                "Error occurred while obtaining certificate for domain for request %s, setting relation data.",
+                "Error occurred while obtaining certificate for request %s, setting relation data.",
                 csr.raw,
             )
             error_code = self._map_lego_error_to_certificate_error(e)
@@ -585,10 +585,11 @@ class LegoCharm(CharmBase):
     ) -> CertificateRequestErrorCode:
         """Map a LEGOError to a CertificateRequestErrorCode.
 
-        - SERVER_NOT_AVAILABLE: Service temporarily unavailable (rate limits, network issues)
-        - DOMAIN_NOT_ALLOWED: Domain ownership cannot be validated or is not permitted
-        - IP_NOT_ALLOWED: Used IP addresses cannot be validated or are not permitted
-        - OTHER: Configuration, authentication, or validation errors
+        - SERVER_NOT_AVAILABLE: Network/connection errors (transient, will retry)
+        - DOMAIN_NOT_ALLOWED: Rejected domain identifiers
+        - IP_NOT_ALLOWED: Rejected IP address identifiers  
+        - WILDCARD_NOT_ALLOWED: Rejected wildcard domain identifiers
+        - OTHER: All other ACME errors and validation failures (persistent, won't retry)
 
         Args:
             lego_error: The LEGO error to map to a certificate error code
@@ -596,23 +597,10 @@ class LegoCharm(CharmBase):
         Returns:
             CertificateRequestErrorCode
         """
-        if lego_error.code == "network_error":
+        if lego_error.code in ["network_error", "connection"]:
             return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
         if lego_error.type == "acme":
-            if lego_error.code in ["rateLimited", "tooManyRegistrationsForIpAddress"]:
-                return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
-
-            if lego_error.code in ["dns", "connection"]:
-                return CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
-
-            if lego_error.code in [
-                "unauthorized",
-                "accountDoesNotExist",
-                "incorrectResponse",
-            ]:
-                return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
-
             if lego_error.code in ["rejectedIdentifier", "unsupportedIdentifier"]:
                 if self._is_ip_rejection(lego_error):
                     return CertificateRequestErrorCode.IP_NOT_ALLOWED
@@ -620,10 +608,6 @@ class LegoCharm(CharmBase):
                 if "wildcard" in detail_lower:
                     return CertificateRequestErrorCode.WILDCARD_NOT_ALLOWED
                 return CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
-
-            if lego_error.code in ["badCSR", "badPublicKey"]:
-                return CertificateRequestErrorCode.OTHER
-            return CertificateRequestErrorCode.OTHER
 
         return CertificateRequestErrorCode.OTHER
 

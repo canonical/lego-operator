@@ -1,4 +1,4 @@
-# Copyright 2024 Ubuntu
+# Copyright 2026 Ubuntu
 # See LICENSE file for licensing details.
 
 """Unit tests for LEGOError to CertificateError mapping."""
@@ -18,8 +18,7 @@ class TestLegoCharmMapError:
     def context(self):
         self.ctx = Context(LegoCharm)
 
-    def test_given_acme_rate_limited_when_map_error_then_server_not_available(self):
-        """Test ACME rate limit errors are treated as transient."""
+    def test_given_acme_rate_limited_when_map_error_then_other(self):
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -31,10 +30,9 @@ class TestLegoCharmMapError:
                 info={"status": 429},
             )
             code = charm._map_lego_error_to_certificate_error(error)
-            assert code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
+            assert code == CertificateRequestErrorCode.OTHER
 
-    def test_given_acme_dns_error_when_map_error_then_server_not_available(self):
-        """Test ACME DNS errors are treated as transient (DNS propagation delays)."""
+    def test_given_acme_dns_error_when_map_error_then_other(self):
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -46,10 +44,9 @@ class TestLegoCharmMapError:
                 info={"status": 400},
             )
             code = charm._map_lego_error_to_certificate_error(error)
-            assert code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
+            assert code == CertificateRequestErrorCode.OTHER
 
-    def test_given_acme_unauthorized_when_map_error_then_domain_not_allowed(self):
-        """Test ACME authorization failures map to domain not allowed."""
+    def test_given_acme_unauthorized_when_map_error_then_other(self):
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -61,10 +58,9 @@ class TestLegoCharmMapError:
                 info={"status": 403},
             )
             code = charm._map_lego_error_to_certificate_error(error)
-            assert code == CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
+            assert code == CertificateRequestErrorCode.OTHER
 
     def test_given_acme_rejected_identifier_ip_when_map_error_then_ip_not_allowed(self):
-        """Test IP address rejection detected via subproblems."""
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -90,7 +86,6 @@ class TestLegoCharmMapError:
     def test_given_acme_rejected_identifier_ip_from_detail_when_map_error_then_ip_not_allowed(
         self,
     ):
-        """Test IP address rejection detected via detail message (fallback)."""
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -105,7 +100,6 @@ class TestLegoCharmMapError:
             assert code == CertificateRequestErrorCode.IP_NOT_ALLOWED
 
     def test_given_acme_rejected_wildcard_when_map_error_then_wildcard_not_allowed(self):
-        """Test wildcard domain rejection is properly identified."""
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -120,7 +114,6 @@ class TestLegoCharmMapError:
             assert code == CertificateRequestErrorCode.WILDCARD_NOT_ALLOWED
 
     def test_given_lego_network_error_when_map_error_then_server_not_available(self):
-        """Test lego network errors are treated as transient."""
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -133,7 +126,6 @@ class TestLegoCharmMapError:
             assert code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
     def test_given_lego_other_error_when_map_error_then_other(self):
-        """Test non-network lego errors map to OTHER."""
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
@@ -146,7 +138,6 @@ class TestLegoCharmMapError:
             assert code == CertificateRequestErrorCode.OTHER
 
     def test_given_acme_unknown_error_when_map_error_then_other(self):
-        """Test unrecognized ACME errors default to OTHER."""
         state = State()
         with self.ctx(self.ctx.on.config_changed(), state) as manager:
             charm = manager.charm
