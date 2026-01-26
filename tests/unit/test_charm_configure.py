@@ -36,6 +36,7 @@ class TestLegoOperatorCharmConfigure:
         self.ctx = Context(LegoCharm)
 
     @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificate_errors")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate")
     @patch("charm.generate_private_key")
@@ -43,9 +44,11 @@ class TestLegoOperatorCharmConfigure:
         self,
         mock_generate_private_key: MagicMock,
         mock_set_relation_certificate: MagicMock,
-        mock_get_outstanding_certificate_requests: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_get_provider_certificate_errors: MagicMock,
         mock_pylego: MagicMock,
     ):
+        mock_get_provider_certificate_errors.return_value = []
         mock_account_pk = generate_private_key()
         mock_generate_private_key.return_value = mock_account_pk
         csr_pk = generate_private_key()
@@ -55,7 +58,7 @@ class TestLegoOperatorCharmConfigure:
         cert = generate_certificate(csr, issuer, issuer_pk, validity=timedelta(days=365))
         chain = [cert, issuer]
 
-        mock_get_outstanding_certificate_requests.return_value = [
+        mock_get_certificate_requests.return_value = [
             RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=True)
         ]
 
@@ -477,7 +480,6 @@ class TestLegoOperatorCharmConfigure:
             metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
         )
 
-        # Create a temporary file to simulate the CA bundle
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".pem") as f:
             f.write(str(ca_cert))
             ca_file_path = f.name
@@ -510,3 +512,173 @@ class TestLegoOperatorCharmConfigure:
                 assert env_arg["LEGO_CA_CERTIFICATES"] == ca_file_path
         finally:
             os.unlink(ca_file_path)
+
+    @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_error")
+    @patch("charm.generate_private_key")
+    def test_given_ip_rejection_error_when_certificate_request_then_ip_not_allowed_error_set(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_set_relation_error: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_pylego: MagicMock,
+    ):
+        """Test that IP address rejections are correctly identified and mapped."""
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "192.168.1.1")
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
+        ]
+
+        mock_pylego.side_effect = LEGOError(
+            detail="Error creating new order :: Cannot issue for IP address",
+            type="acme",
+            code="rejectedIdentifier",
+            acme_type="urn:ietf:params:acme:error:rejectedIdentifier",
+            status=400,
+        )
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+            relations=[
+                Relation(endpoint=CERTIFICATES_RELATION_NAME),
+            ],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        self.ctx.run(self.ctx.on.update_status(), state)
+
+        assert mock_set_relation_error.called
+        call_args = mock_set_relation_error.call_args[1]
+        provider_error = call_args["provider_error"]
+
+        from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
+
+        assert provider_error.error.code == CertificateRequestErrorCode.IP_NOT_ALLOWED
+        assert provider_error.error.name == "IP_NOT_ALLOWED"
+        assert provider_error.relation_id == 1
+
+    @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_error")
+    @patch("charm.generate_private_key")
+    def test_given_domain_rejection_when_certificate_request_then_domain_not_allowed_error_set(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_set_relation_error: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_pylego: MagicMock,
+    ):
+        """Test that domain rejections (non-IP) are correctly mapped to DOMAIN_NOT_ALLOWED."""
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "example.com")
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
+        ]
+
+        mock_pylego.side_effect = LEGOError(
+            detail="Domain example.com is not allowed",
+            type="acme",
+            code="rejectedIdentifier",
+            acme_type="urn:ietf:params:acme:error:rejectedIdentifier",
+            status=400,
+        )
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+            relations=[
+                Relation(endpoint=CERTIFICATES_RELATION_NAME),
+            ],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        self.ctx.run(self.ctx.on.update_status(), state)
+
+        assert mock_set_relation_error.called
+        call_args = mock_set_relation_error.call_args[1]
+        provider_error = call_args["provider_error"]
+
+        from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
+
+        assert provider_error.error.code == CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
+        assert provider_error.error.name == "DOMAIN_NOT_ALLOWED"
+
+    @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_error")
+    @patch("charm.generate_private_key")
+    def test_given_network_error_when_certificate_request_then_server_not_available_error_set(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_set_relation_error: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_pylego: MagicMock,
+    ):
+        """Test that network errors are correctly mapped to SERVER_NOT_AVAILABLE."""
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "example.com")
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
+        ]
+
+        mock_pylego.side_effect = LEGOError(
+            detail="dial tcp 127.0.0.1:443: connect: connection refused",
+            type="lego",
+            code="network_error",
+        )
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+            relations=[
+                Relation(endpoint=CERTIFICATES_RELATION_NAME),
+            ],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        self.ctx.run(self.ctx.on.update_status(), state)
+
+        assert mock_set_relation_error.called
+        call_args = mock_set_relation_error.call_args[1]
+        provider_error = call_args["provider_error"]
+
+        from charmlibs.interfaces.tls_certificates import CertificateRequestErrorCode
+
+        assert provider_error.error.code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
+        assert provider_error.error.name == "SERVER_NOT_AVAILABLE"
