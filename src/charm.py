@@ -587,7 +587,7 @@ class LegoCharm(CharmBase):
 
         - SERVER_NOT_AVAILABLE: Network/connection errors (transient, will retry)
         - DOMAIN_NOT_ALLOWED: Rejected domain identifiers
-        - IP_NOT_ALLOWED: Rejected IP address identifiers  
+        - IP_NOT_ALLOWED: Rejected IP address identifiers
         - WILDCARD_NOT_ALLOWED: Rejected wildcard domain identifiers
         - OTHER: All other ACME errors and validation failures (persistent, won't retry)
 
