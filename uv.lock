@@ -95,16 +95,16 @@ wheels = [
 
 [[package]]
 name = "charmlibs-interfaces-tls-certificates"
-version = "1.4.0"
+version = "1.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "ops" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5c/25/56ce98f08b55ac431e44a9d125c8e3f59367dfb53d07525b8a0e201eb39b/charmlibs_interfaces_tls_certificates-1.4.0.tar.gz", hash = "sha256:cfcc471552e5506f6b6978bdffd26b93f1911964a1fd3290f5d21df5342ce2d0", size = 127158, upload-time = "2026-01-20T13:48:52.399Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/fa/44d0cb70294d5eb60287c5c730b564f000ef65772b1b187b7b39a4964b75/charmlibs_interfaces_tls_certificates-1.5.0.tar.gz", hash = "sha256:4b4ac638704e8877f8360953dfbf70692aa0e9cc28d95d295fe169d950adae12", size = 133726, upload-time = "2026-01-27T16:22:54.402Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1c/5e/92ce886f0072bb6a8fd688edbfccaf8bee5700ea7e38cc1d072c690dd877/charmlibs_interfaces_tls_certificates-1.4.0-py3-none-any.whl", hash = "sha256:ddfe5dbd27728ea1c76a2952d701d4dafa11b15edf96fe7d6e82a38748e592fe", size = 22705, upload-time = "2026-01-20T13:48:51.299Z" },
+    { url = "https://files.pythonhosted.org/packages/61/eb/fac169560af63cb04a1a3d6d8f7c674700767415f3b925d7dadd589a95c0/charmlibs_interfaces_tls_certificates-1.5.0-py3-none-any.whl", hash = "sha256:77e6e5237eebc2cf20df7fdb752b7eb536263425de6f0f5ea089bd42484cfd06", size = 23137, upload-time = "2026-01-27T16:22:53.269Z" },
 ]
 
 [[package]]
@@ -384,7 +384,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "charmlibs-interfaces-tls-certificates", specifier = "~=1.4" },
+    { name = "charmlibs-interfaces-tls-certificates", specifier = "~=1.5" },
     { name = "cosl" },
     { name = "cryptography" },
     { name = "ops" },
