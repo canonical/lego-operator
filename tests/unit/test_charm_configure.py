@@ -36,6 +36,40 @@ class TestLegoOperatorCharmConfigure:
     def context(self):
         self.ctx = Context(LegoCharm)
 
+    @patch("charm.logger.warning")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificate_errors")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    def test_given_configure_when_run_then_synthetic_expiry_log_emitted(
+        self,
+        mock_get_certificate_requests: MagicMock,
+        mock_get_provider_certificate_errors: MagicMock,
+        mock_logger_warning: MagicMock,
+    ):
+        mock_get_provider_certificate_errors.return_value = []
+        mock_get_certificate_requests.return_value = []
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+            },
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        self.ctx.run(self.ctx.on.update_status(), state)
+
+        assert mock_logger_warning.called
+        logged = "\n".join(str(call.args[0]) for call in mock_logger_warning.call_args_list)
+        assert '"event": "lego_cert_expiring"' in logged
+        assert '"common_name": "test-expiry-alert"' in logged
+
     @patch("charm.run_lego_command")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificate_errors")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")

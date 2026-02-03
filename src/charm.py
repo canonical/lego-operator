@@ -27,10 +27,7 @@ from charms.certificate_transfer_interface.v1.certificate_transfer import (
     CertificateTransferProvides,
     CertificateTransferRequires,
 )
-<<<<<<< HEAD
 from charms.loki_k8s.v0.charm_logging import log_charm
-=======
->>>>>>> df3790f (Charm logging)
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from cryptography import x509
