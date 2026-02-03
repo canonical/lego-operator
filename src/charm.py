@@ -4,7 +4,7 @@
 
 """Lego Operator Charm."""
 
-import math
+import json
 import logging
 import os
 import re
@@ -33,9 +33,8 @@ from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from ops import ModelError, Secret, SecretNotFoundError, main
-from ops.charm import CharmBase, CollectMetricsEvent, CollectStatusEvent
+from ops.charm import CharmBase, CollectStatusEvent
 from ops.framework import EventBase
-from ops.framework import StoredState
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from pylego import LEGOError, run_lego_command
 
@@ -54,7 +53,6 @@ HTTP01_PORT_DEFAULT = 8080
 EXPIRY_SOON_REMAINING_RATIO = 0.5
 EXPIRY_CRITICAL_REMAINING_RATIO = 0.1
 SECONDS_PER_DAY = 86400
-EXPIRY_WARNING_LOG_INTERVAL_SECONDS = 60 * 60 * 24  # once per day
 
 
 @log_charm(logging_endpoints="loki_endpoints")  # type: ignore[misc]
@@ -63,8 +61,6 @@ class LegoCharm(CharmBase):
 
     This charm implements the tls_certificates interface as a provider.
     """
-
-    _stored = StoredState()
 
     def __init__(self, *args: Any):
         super().__init__(*args)
@@ -92,7 +88,6 @@ class LegoCharm(CharmBase):
             self.receive_ca_certificates.on.certificates_removed, self._configure
         )
         self.framework.observe(self.on.collect_unit_status, self._on_collect_status)
-        self.framework.observe(self.on.collect_metrics, self._on_collect_metrics)
 
         self._plugin = str(self.model.config.get("plugin", ""))
         self._ingress = None
@@ -143,44 +138,39 @@ class LegoCharm(CharmBase):
         self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
         self._configure_send_ca_certificates()
-        self._update_expiry_cache()
-        self._maybe_log_expiry_warning()
+        now = datetime.now(timezone.utc)
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "lego_cert_expiring",
+                    "severity": "critical",
+                    "common_name": "test-expiry-alert",
+                    "relation_id": -1,
+                    "expiry_ts": int(now.timestamp()),
+                    "expiry_time": now.isoformat(),
+                    "seconds_left": 0,
+                    "note": "synthetic event emitted for alert testing",
+                },
+                sort_keys=True,
+            )
+        )
+        self._log_expiry()
 
-    def _on_collect_metrics(self, event: CollectMetricsEvent) -> None:
-        """Emit Juju unit metrics for certificate expiry/renewal observability."""
-        metrics = {
-            "lego_renewal_failures_total": int(self._stored.renewal_failures_total),
-            "lego_last_renewal_success_timestamp": int(self._stored.last_renewal_success_ts),
-            "lego_last_renewal_failure_timestamp": int(self._stored.last_renewal_failure_ts),
-            "lego_certificates_total": int(self._stored.certificates_total),
-            "lego_cert_days_until_expiry_min": float(self._stored.days_until_expiry_min),
-            "lego_cert_remaining_ratio_min": float(self._stored.remaining_ratio_min),
-            "lego_cert_expiring_soon_count": int(self._stored.expiring_soon_count),
-            "lego_cert_expiring_critical_count": int(self._stored.expiring_critical_count),
-            "lego_cert_next_expiry_timestamp": int(self._stored.next_expiry_ts),
-            "lego_is_leader": 1 if self.unit.is_leader() else 0,
-        }
-        event.add_metrics(metrics)
+    def _log_expiry(self) -> None:
+        """Log a minimal JSON payload per certificate that is nearing expiry.
 
-    def _update_expiry_cache(self) -> None:
-        """Cache certificate expiry stats for later metrics/log emission.
-
-        Note: `collect_metrics` callbacks are sandboxed, so we avoid calling into
-        the TLS interface there; instead we refresh the cache in regular hooks.
+        This charm intentionally stays workloadless; Loki alerts are triggered by log events.
         """
         try:
             provider_certificates = self._tls_certificates.get_provider_certificates()
         except Exception as e:  # noqa: BLE001
-            logger.debug("unable to read provider certificates for metrics: %s", e)
-            provider_certificates = []
+            logger.debug("unable to read provider certificates for expiry checks: %s", e)
+            return
+
+        if not provider_certificates:
+            return
 
         now = datetime.now(timezone.utc)
-        total = 0
-        min_days = math.inf
-        min_ratio = math.inf
-        expiring_soon = 0
-        expiring_critical = 0
-        next_expiry_ts = 0
 
         for provider_certificate in provider_certificates:
             try:
@@ -188,65 +178,46 @@ class LegoCharm(CharmBase):
             except Exception:  # noqa: BLE001
                 continue
 
-            try:
-                valid_from = provider_certificate.certificate._cert.not_valid_before_utc  # noqa: SLF001
-            except Exception:  # noqa: BLE001
-                valid_from = None
-
-            total += 1
             seconds_left = (expiry - now).total_seconds()
-            days_left = seconds_left / 86400
-            min_days = min(min_days, days_left)
 
             ratio_left: float | None = None
-            if valid_from is not None:
+            try:
+                valid_from = provider_certificate.certificate.validity_start_time
                 lifetime_seconds = (expiry - valid_from).total_seconds()
                 if lifetime_seconds > 0:
                     ratio_left = max(0.0, min(1.0, seconds_left / lifetime_seconds))
-                    min_ratio = min(min_ratio, ratio_left)
+            except Exception:  # noqa: BLE001
+                ratio_left = None
 
-            # Prefer relative thresholds when possible; fall back to absolute time for safety.
-            if ratio_left is not None:
-                if ratio_left <= EXPIRY_SOON_REMAINING_RATIO:
-                    expiring_soon += 1
-                if ratio_left <= EXPIRY_CRITICAL_REMAINING_RATIO:
-                    expiring_critical += 1
-            else:
-                if days_left <= 30:
-                    expiring_soon += 1
-                if days_left <= 7:
-                    expiring_critical += 1
+            if ratio_left is None:
+                # If lifetime can't be determined, we can't apply ratio-based thresholds.
+                continue
 
-            expiry_ts = int(expiry.timestamp())
-            if next_expiry_ts == 0 or expiry_ts < next_expiry_ts:
-                next_expiry_ts = expiry_ts
+            if ratio_left > EXPIRY_SOON_REMAINING_RATIO:
+                continue
 
-        self._stored.certificates_total = total
-        self._stored.days_until_expiry_min = -1.0 if total == 0 else float(min_days)
-        self._stored.remaining_ratio_min = -1.0 if min_ratio is math.inf else float(min_ratio)
-        self._stored.expiring_soon_count = expiring_soon
-        self._stored.expiring_critical_count = expiring_critical
-        self._stored.next_expiry_ts = next_expiry_ts
+            severity = (
+                "critical" if ratio_left <= EXPIRY_CRITICAL_REMAINING_RATIO else "warning"
+            )
 
-    def _maybe_log_expiry_warning(self) -> None:
-        """Log a concise expiry warning summary, rate-limited to avoid log spam."""
-        if self._stored.expiring_soon_count == 0:
-            return
+            common_name = ""
+            try:
+                common_name = provider_certificate.certificate_signing_request.common_name
+            except Exception:  # noqa: BLE001
+                common_name = ""
 
-        now_ts = int(datetime.now(timezone.utc).timestamp())
-        if now_ts - int(self._stored.last_expiry_warning_log_ts) < EXPIRY_WARNING_LOG_INTERVAL_SECONDS:
-            return
+            payload = {
+                "event": "lego_cert_expiring",
+                "severity": severity,
+                "common_name": common_name,
+                "relation_id": int(provider_certificate.relation_id),
+                "expiry_ts": int(expiry.timestamp()),
+                "expiry_time": expiry.isoformat(),
+                "seconds_left": int(max(0.0, seconds_left)),
+            }
 
-        self._stored.last_expiry_warning_log_ts = now_ts
-        logger.warning(
-            "Certificates nearing expiry: %s below %.0f%% remaining (%s below %.0f%% remaining); min remaining ratio: %.3f; min days until expiry: %.2f",
-            int(self._stored.expiring_soon_count),
-            EXPIRY_SOON_REMAINING_RATIO * 100,
-            int(self._stored.expiring_critical_count),
-            EXPIRY_CRITICAL_REMAINING_RATIO * 100,
-            float(self._stored.remaining_ratio_min),
-            float(self._stored.days_until_expiry_min),
-        )
+            # Log JSON to make Loki alerting via `| json` straightforward.
+            logger.warning(json.dumps(payload, sort_keys=True))
 
     def _configure_acme_ca_certificates_bundle(self):
         """Configure the LEGO CA certificates."""
@@ -354,8 +325,18 @@ class LegoCharm(CharmBase):
                 dns_propagation_wait=dns_timeout,
             )
         except LEGOError as e:
-            self._stored.renewal_failures_total = int(self._stored.renewal_failures_total) + 1
-            self._stored.last_renewal_failure_ts = int(datetime.now(timezone.utc).timestamp())
+            logger.warning(
+                json.dumps(
+                    {
+                        "event": "lego_renewal_failure",
+                        "csr": csr.common_name,
+                        "endpoint": self._server or "",
+                        "detail": e.detail,
+                        "acme_type": e.acme_type or "",
+                    },
+                    sort_keys=True,
+                )
+            )
             logger.error(
                 "Error occurred while obtaining certificate for request %s, setting relation data.",
                 csr.raw,
@@ -375,7 +356,6 @@ class LegoCharm(CharmBase):
                 ),
             )
             return
-        self._stored.last_renewal_success_ts = int(datetime.now(timezone.utc).timestamp())
         end_certificate = self._get_end_certificate(response.certificate)
         self._tls_certificates.set_relation_certificate(
             provider_certificate=ProviderCertificate(
