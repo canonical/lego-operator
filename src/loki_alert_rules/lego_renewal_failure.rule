@@ -1,0 +1,13 @@
+alert: LegoCertificateRenewalFailure
+expr: |
+  sum by (juju_model, juju_model_uuid, juju_application) (
+    count_over_time(
+      ({%%juju_topology%%} | json | event="lego_renewal_failure")[15m]
+    )
+  ) > 0
+for: 5m
+labels:
+  severity: page
+annotations:
+  summary: "LEGO certificate renewal failed"
+  description: "lego-operator failed to obtain/renew a certificate from ACME. Inspect logs for details."
