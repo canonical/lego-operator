@@ -2,10 +2,10 @@ alert: LegoCertificateExpiringCritical
 expr: |
   sum by (model, model_uuid, charm_name) (
     count_over_time(
-      ({charm_name="lego"} | json | event="lego_cert_expiring" | severity="critical")[1h]
+      ({charm_name="lego"} |= "lego_cert_expiring" |= "critical")[1h]
     )
   ) > 0
-for: 10m
+for: 0m
 labels:
   severity: page
 annotations:

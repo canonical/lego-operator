@@ -2,10 +2,10 @@ alert: LegoCertificateRenewalFailure
 expr: |
   sum by (model, model_uuid, charm_name) (
     count_over_time(
-      ({charm_name="lego"} | json | event="lego_renewal_failure")[15m]
+      ({charm_name="lego"} |= "lego_renewal_failure")[15m]
     )
   ) > 0
-for: 5m
+for: 0m
 labels:
   severity: page
 annotations:
