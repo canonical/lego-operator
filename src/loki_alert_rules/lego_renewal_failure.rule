@@ -1,8 +1,8 @@
 alert: LegoCertificateRenewalFailure
 expr: |
-  sum by (juju_model, juju_model_uuid, juju_application) (
+  sum by (model, model_uuid, charm_name) (
     count_over_time(
-      ({%%juju_topology%%} | json | event="lego_renewal_failure")[15m]
+      ({charm_name="lego"} | json | event="lego_renewal_failure")[15m]
     )
   ) > 0
 for: 5m
