@@ -49,7 +49,7 @@ HTTP01_IFACE_DEFAULT = ""
 HTTP01_PORT_DEFAULT = 8080
 
 
-@log_charm(logging_endpoints="loki_endpoints")
+@log_charm(logging_endpoints="loki_endpoints")  # type: ignore[misc]
 class LegoCharm(CharmBase):
     """Base charm for charms that use the ACME protocol to get certificates.
 
