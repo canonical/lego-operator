@@ -158,8 +158,11 @@ class LegoCharm(CharmBase):
         certificate_pair_map = {
             csr: list(
                 filter(
-                    lambda x: x.relation_id == csr.relation_id
-                    and x.certificate_signing_request.raw == csr.certificate_signing_request.raw,
+                    lambda x: (
+                        x.relation_id == csr.relation_id
+                        and x.certificate_signing_request.raw
+                        == csr.certificate_signing_request.raw
+                    ),
                     provided_certificates,
                 )
             )
