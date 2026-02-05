@@ -1,8 +1,8 @@
 alert: LegoCertificateExpiringCritical
 expr: |
-  sum by (model, model_uuid, charm_name) (
+  sum by (juju_model, juju_model_uuid, juju_application, juju_charm) (
     count_over_time(
-      ({charm_name="lego"} |= "lego_cert_expiring" |= "critical")[1h]
+      ({%%juju_topology%%} |= "\"event\": \"lego_cert_expiring\"" |= "\"severity\": \"critical\"")[1h]
     )
   ) > 0
 for: 0m
