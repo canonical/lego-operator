@@ -25,7 +25,8 @@ from charms.certificate_transfer_interface.v1.certificate_transfer import (
     CertificateTransferProvides,
     CertificateTransferRequires,
 )
-from charms.loki_k8s.v1.loki_push_api import LogForwarder
+from charms.loki_k8s.v0.charm_logging import log_charm
+from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer
 from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
@@ -48,6 +49,7 @@ HTTP01_IFACE_DEFAULT = ""
 HTTP01_PORT_DEFAULT = 8080
 
 
+@log_charm(logging_endpoints="loki_endpoints")  # type: ignore[misc]
 class LegoCharm(CharmBase):
     """Base charm for charms that use the ACME protocol to get certificates.
 
@@ -56,7 +58,7 @@ class LegoCharm(CharmBase):
 
     def __init__(self, *args: Any):
         super().__init__(*args)
-        self._logging = LogForwarder(self, relation_name="logging")
+        self._logging = LokiPushApiConsumer(self, relation_name="logging")
         self._tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
         self.cert_transfer = CertificateTransferProvides(self, SEND_CA_TRANSFER_RELATION_NAME)
         self.receive_ca_certificates = CertificateTransferRequires(
@@ -156,8 +158,11 @@ class LegoCharm(CharmBase):
         certificate_pair_map = {
             csr: list(
                 filter(
-                    lambda x: x.relation_id == csr.relation_id
-                    and x.certificate_signing_request.raw == csr.certificate_signing_request.raw,
+                    lambda x: (
+                        x.relation_id == csr.relation_id
+                        and x.certificate_signing_request.raw
+                        == csr.certificate_signing_request.raw
+                    ),
                     provided_certificates,
                 )
             )
@@ -510,6 +515,15 @@ class LegoCharm(CharmBase):
     def _is_http_plugin(self) -> bool:
         """Check if the plugin is HTTP."""
         return self._plugin in ("http-01", "http")
+
+    @property
+    def loki_endpoints(self) -> list[str]:
+        """Loki push API endpoints for charm logging.
+
+        Returns:
+            List of Loki push API endpoint URLs.
+        """
+        return [endpoint["url"] for endpoint in self._logging.loki_endpoints]
 
     def _get_ca_certs_from_config(self) -> Set[str]:
         """Return a set of PEM CA certificates provided via config.

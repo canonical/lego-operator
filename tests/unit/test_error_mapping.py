@@ -29,7 +29,7 @@ class TestLegoCharmMapError:
                 acme_type="urn:ietf:params:acme:error:rateLimited",
                 info={"status": 429},
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.OTHER
 
     def test_given_acme_dns_error_when_map_error_then_other(self):
@@ -43,7 +43,7 @@ class TestLegoCharmMapError:
                 acme_type="urn:ietf:params:acme:error:dns",
                 info={"status": 400},
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.OTHER
 
     def test_given_acme_unauthorized_when_map_error_then_other(self):
@@ -57,7 +57,7 @@ class TestLegoCharmMapError:
                 acme_type="urn:ietf:params:acme:error:unauthorized",
                 info={"status": 403},
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.OTHER
 
     def test_given_acme_rejected_identifier_ip_when_map_error_then_ip_not_allowed(self):
@@ -80,7 +80,7 @@ class TestLegoCharmMapError:
                     ],
                 },
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.IP_NOT_ALLOWED
 
     def test_given_acme_rejected_identifier_ip_from_detail_when_map_error_then_ip_not_allowed(
@@ -96,7 +96,7 @@ class TestLegoCharmMapError:
                 acme_type="urn:ietf:params:acme:error:rejectedIdentifier",
                 info={"status": 400},
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.IP_NOT_ALLOWED
 
     def test_given_acme_rejected_wildcard_when_map_error_then_wildcard_not_allowed(self):
@@ -110,7 +110,7 @@ class TestLegoCharmMapError:
                 acme_type="urn:ietf:params:acme:error:rejectedIdentifier",
                 info={"status": 400},
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.WILDCARD_NOT_ALLOWED
 
     def test_given_lego_network_error_when_map_error_then_server_not_available(self):
@@ -122,7 +122,7 @@ class TestLegoCharmMapError:
                 type="lego",
                 code="network_error",
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE
 
     def test_given_lego_other_error_when_map_error_then_other(self):
@@ -134,7 +134,7 @@ class TestLegoCharmMapError:
                 type="lego",
                 code="dns_provider_failed",
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.OTHER
 
     def test_given_acme_unknown_error_when_map_error_then_other(self):
@@ -148,5 +148,5 @@ class TestLegoCharmMapError:
                 acme_type="urn:ietf:params:acme:error:unknownError",
                 info={"status": 500},
             )
-            code = charm._map_lego_error_to_certificate_error(error)
+            code = charm._map_lego_error_to_certificate_error(error)  # type: ignore[attr-defined]
             assert code == CertificateRequestErrorCode.OTHER
