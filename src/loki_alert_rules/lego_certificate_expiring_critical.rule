@@ -1,0 +1,13 @@
+alert: LegoCertificateExpiringCritical
+expr: |
+  sum by (model, model_uuid, charm_name) (
+    count_over_time(
+      ({charm_name="lego"} |= "\"event\": \"lego_cert_expiring\"" |= "\"severity\": \"critical\"")[1h]
+    )
+  ) > 0
+for: 0m 
+labels:
+  severity: page
+annotations:
+  summary: "LEGO certificates are near expiry (critical)"
+  description: "One or more certificates reported as critically close to expiry (see lego-operator logs)."

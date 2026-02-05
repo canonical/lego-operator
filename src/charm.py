@@ -4,10 +4,12 @@
 
 """Lego Operator Charm."""
 
+import json
 import logging
 import os
 import re
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any, Dict, Set
 from urllib.parse import urlparse
 
@@ -31,7 +33,7 @@ from charms.traefik_k8s.v2.ingress import IngressPerAppRequirer
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from ops import ModelError, Secret, SecretNotFoundError, main
-from ops.charm import CharmBase, CollectStatusEvent
+from ops.charm import CharmBase, CollectStatusEvent, UpdateStatusEvent
 from ops.framework import EventBase
 from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
 from pylego import LEGOError, run_lego_command
@@ -48,6 +50,8 @@ ACME_CA_CERTIFICATES_FILE_PATH = "/var/lib/acme-ca-certificates.pem"
 HTTP01_IFACE_DEFAULT = ""
 HTTP01_PORT_DEFAULT = 8080
 
+EXPIRY_CRITICAL_RATIO = 0.15
+
 
 @log_charm(logging_endpoints="loki_endpoints")  # type: ignore[misc]
 class LegoCharm(CharmBase):
@@ -58,7 +62,14 @@ class LegoCharm(CharmBase):
 
     def __init__(self, *args: Any):
         super().__init__(*args)
-        self._logging = LokiPushApiConsumer(self, relation_name="logging")
+        self._logging = LokiPushApiConsumer(
+            self,
+            relation_name="logging",
+            # Our charm logs use labels like `model`, `application`, `charm_name`.
+            # The Loki library's default alert-rule topology injection uses `juju_*` labels,
+            # which may not exist on the log streams; disable injection so rules can match.
+            skip_alert_topology_labeling=True,
+        )
         self._tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
         self.cert_transfer = CertificateTransferProvides(self, SEND_CA_TRANSFER_RELATION_NAME)
         self.receive_ca_certificates = CertificateTransferRequires(
@@ -75,6 +86,7 @@ class LegoCharm(CharmBase):
                 self.on.update_status,
             ]
         ]
+        self.framework.observe(self.on.update_status, self._on_update_status)
         self.framework.observe(
             self.receive_ca_certificates.on.certificate_set_updated, self._configure
         )
@@ -132,6 +144,51 @@ class LegoCharm(CharmBase):
         self._configure_acme_ca_certificates_bundle()
         self._configure_certificates()
         self._configure_send_ca_certificates()
+
+    def _on_update_status(self, event: UpdateStatusEvent) -> None:
+        """Handle update-status event."""
+
+        if not self.unit.is_leader():
+            return
+        self._log_expiring_certificates()
+
+    def _log_expiring_certificates(self) -> None:
+        """Log certificates that are expiring soon."""
+        now = datetime.now(timezone.utc)
+
+        for provider_certificate in self._tls_certificates.get_provider_certificates():
+            certificate = provider_certificate.certificate
+            not_before = certificate.validity_start_time
+            not_after = certificate.expiry_time
+
+            sans_dns = sorted(certificate.sans_dns or [])
+            sans_ip = sorted(certificate.sans_ip or [])
+            common_name = certificate.common_name
+
+            total_seconds = (not_after - not_before).total_seconds()
+            if total_seconds <= 0:
+                continue
+
+            remaining_seconds = (not_after - now).total_seconds()
+            remaining_ratio = remaining_seconds / total_seconds
+            remaining_days = int(remaining_seconds // 86400)
+
+            if not remaining_ratio <= EXPIRY_CRITICAL_RATIO:
+                continue
+
+            payload = {
+                "event": "lego_cert_expiring",
+                "severity": "critical",
+                "common_name": common_name,
+                "sans_dns": sans_dns,
+                "sans_ip": sans_ip,
+                "not_valid_after": not_after.isoformat(),
+                "remaining_days": remaining_days,
+            }
+
+            message = json.dumps(payload, sort_keys=True)
+            logger.warning(message)
+                
 
     def _configure_acme_ca_certificates_bundle(self):
         """Configure the LEGO CA certificates."""
