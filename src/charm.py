@@ -64,7 +64,14 @@ class LegoCharm(CharmBase):
 
     def __init__(self, *args: Any):
         super().__init__(*args)
-        self._logging = LokiPushApiConsumer(self, relation_name="logging")
+        # Charm logs are forwarded with labels injected by `charms.loki_k8s.v0.charm_logging`.
+        # Avoid having the loki_push_api relation library inject juju topology matchers into
+        # alert expressions, as that can cause alerts to never match the charm log streams.
+        self._logging = LokiPushApiConsumer(
+            self,
+            relation_name="logging",
+            skip_alert_topology_labeling=True,
+        )
         self._tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
         self.cert_transfer = CertificateTransferProvides(self, SEND_CA_TRANSFER_RELATION_NAME)
         self.receive_ca_certificates = CertificateTransferRequires(
