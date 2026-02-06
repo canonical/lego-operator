@@ -94,3 +94,10 @@ config:
         DNS propagation timeout in seconds. How long to wait for DNS records to propagate before ACME verification attempts.
         Must be a positive integer. Useful in environments with slow DNS propagation or caching issues.
         If not set, LEGO's default timeout will be used.
+
+    expiry_ratio:
+      type: float
+      default: 0.15
+      description: |
+        Ratio (fraction) of certificate lifetime remaining below which the charm logs the expiring certificate.
+        Must be > 0 and <= 1. For example, 0.15 means "15% or less of the certificate lifetime remaining".

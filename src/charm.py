@@ -50,8 +50,6 @@ ACME_CA_CERTIFICATES_FILE_PATH = "/var/lib/acme-ca-certificates.pem"
 HTTP01_IFACE_DEFAULT = ""
 HTTP01_PORT_DEFAULT = 8080
 
-EXPIRY_CRITICAL_RATIO = 0.15
-
 
 @log_charm(logging_endpoints="loki_endpoints")  # type: ignore[misc]
 class LegoCharm(CharmBase):
@@ -65,9 +63,6 @@ class LegoCharm(CharmBase):
         self._logging = LokiPushApiConsumer(
             self,
             relation_name="logging",
-            # Our charm logs use labels like `model`, `application`, `charm_name`.
-            # The Loki library's default alert-rule topology injection uses `juju_*` labels,
-            # which may not exist on the log streams; disable injection so rules can match.
             skip_alert_topology_labeling=True,
         )
         self._tls_certificates = TLSCertificatesProvidesV4(self, CERTIFICATES_RELATION_NAME)
@@ -155,6 +150,7 @@ class LegoCharm(CharmBase):
     def _log_expiring_certificates(self) -> None:
         """Log certificates that are expiring soon."""
         now = datetime.now(timezone.utc)
+        expiry_ratio = self._expiry_ratio
 
         for provider_certificate in self._tls_certificates.get_provider_certificates():
             certificate = provider_certificate.certificate
@@ -173,7 +169,7 @@ class LegoCharm(CharmBase):
             remaining_ratio = remaining_seconds / total_seconds
             remaining_days = int(remaining_seconds // 86400)
 
-            if not remaining_ratio <= EXPIRY_CRITICAL_RATIO:
+            if not remaining_ratio <= expiry_ratio:
                 continue
 
             payload = {
@@ -374,7 +370,30 @@ class LegoCharm(CharmBase):
             return err
         if err := self._validate_dns_propagation_timeout():
             return err
+        if err := self._validate_expiry_ratio():
+            return err
         return ""
+
+    def _validate_expiry_ratio(self) -> str:
+        """Validate the expiry_ratio config option."""
+
+        ratio = self.model.config.get("expiry_ratio", None)
+
+        if not isinstance(ratio, (int, float)):
+            return "expiry_ratio must be a number"
+
+        ratio = float(ratio)
+        if ratio <= 0 or ratio > 1:
+            return "expiry_ratio must be > 0 and <= 1"
+
+        return ""
+
+    @property
+    def _expiry_ratio(self) -> float:
+        ratio = self.model.config.get("expiry_ratio")
+        if isinstance(ratio, (int, float)):
+            return float(ratio)
+        raise ValueError("expiry_ratio is not a number")
 
     def _validate_plugin_config_options(self) -> str:
         """Validate the config options for the specific chosen plugins.
