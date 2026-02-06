@@ -142,7 +142,6 @@ class LegoCharm(CharmBase):
 
     def _on_update_status(self, event: UpdateStatusEvent) -> None:
         """Handle update-status event."""
-
         if not self.unit.is_leader():
             return
         self._log_expiring_certificates()
@@ -184,7 +183,6 @@ class LegoCharm(CharmBase):
 
             message = json.dumps(payload, sort_keys=True)
             logger.warning(message)
-                
 
     def _configure_acme_ca_certificates_bundle(self):
         """Configure the LEGO CA certificates."""
@@ -346,7 +344,7 @@ class LegoCharm(CharmBase):
             message += ". please monitor logs for any errors"
         return message
 
-    def _validate_charm_config_options(self) -> str:
+    def _validate_charm_config_options(self) -> str:  # noqa: C901
         """Validate generic ACME config.
 
         Returns:
@@ -376,7 +374,6 @@ class LegoCharm(CharmBase):
 
     def _validate_expiry_ratio(self) -> str:
         """Validate the expiry_ratio config option."""
-
         ratio = self.model.config.get("expiry_ratio", None)
 
         if not isinstance(ratio, (int, float)):
