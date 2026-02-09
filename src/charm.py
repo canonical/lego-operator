@@ -168,7 +168,7 @@ class LegoCharm(CharmBase):
             remaining_ratio = remaining_seconds / total_seconds
             remaining_days = int(remaining_seconds // 86400)
 
-            if not remaining_ratio <= expiry_ratio:
+            if remaining_ratio > expiry_ratio:
                 continue
 
             payload = {
