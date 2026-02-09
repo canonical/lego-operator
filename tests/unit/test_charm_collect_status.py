@@ -239,6 +239,23 @@ class TestLegoOperatorCharmCollectStatus:
         out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
         assert out.unit_status == ActiveStatus("0/0 certificate requests are fulfilled")
 
+    def test_given_invalid_expiry_ratio_when_collect_status_then_status_is_blocked(self):
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1")
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+                "expiry_ratio": 1.5,
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == BlockedStatus("expiry_ratio must be > 0 and <= 1")
+
     def test_given_http01_plugin_and_no_ingress_when_update_status_then_status_is_blocked(self):
         state = State(
             leader=True,
