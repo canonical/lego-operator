@@ -196,15 +196,12 @@ class LegoCharm(CharmBase):
     def _configure_certificates(self):
         """Attempt to fulfill all certificate requests.
 
-        This method implements retry logic that distinguishes between transient and persistent errors:
-        - Transient errors (SERVER_NOT_AVAILABLE): Network issues, connection failures
-          These requests will be retried on the next hook
-        - Persistent errors (DOMAIN_NOT_ALLOWED, IP_NOT_ALLOWED, OTHER): All other errors
-          These requests will NOT be retried
+        Automatically retries all outstanding certificate requests, including those that
+        previously failed. If the underlying issue has been resolved, the request will
+        succeed and the error will be replaced with a certificate.
         """
         certificate_requests = self._tls_certificates.get_certificate_requests()
         provided_certificates = self._tls_certificates.get_provider_certificates()
-        provider_errors = self._tls_certificates.get_provider_certificate_errors()
 
         certificate_pair_map = {
             csr: list(
@@ -220,25 +217,8 @@ class LegoCharm(CharmBase):
             for csr in certificate_requests
         }
 
-        persistent_error_requests = {
-            (error.relation_id, error.certificate_signing_request.raw)
-            for error in provider_errors
-            if error.error.code != CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
-        }
-
         for certificate_request, assigned_certificates in certificate_pair_map.items():
             if assigned_certificates:
-                continue
-
-            request_key = (
-                certificate_request.relation_id,
-                certificate_request.certificate_signing_request.raw,
-            )
-            if request_key in persistent_error_requests:
-                logger.debug(
-                    "Skipping certificate request with persistent error: %s",
-                    certificate_request.certificate_signing_request.raw,
-                )
                 continue
 
             with self.maintenance_status(
