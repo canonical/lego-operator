@@ -35,7 +35,7 @@ from cryptography.hazmat.primitives import serialization
 from ops import ModelError, Secret, SecretNotFoundError, main
 from ops.charm import CharmBase, CollectStatusEvent, UpdateStatusEvent
 from ops.framework import EventBase
-from ops.model import ActiveStatus, BlockedStatus, MaintenanceStatus
+from ops.model import ActiveStatus, BlockedStatus, InvalidStatusError, MaintenanceStatus
 from pylego import LEGOError, run_lego_command
 
 import plugin_configs
@@ -508,8 +508,13 @@ class LegoCharm(CharmBase):
         """
         previous_status = self.unit.status
         self.unit.status = MaintenanceStatus(message)
-        yield
-        self.unit.status = previous_status
+        try:
+            yield
+        finally:
+            try:
+                self.unit.status = previous_status
+            except InvalidStatusError:
+                pass
 
     @property
     def _app_environment(self) -> Dict[str, str]:
