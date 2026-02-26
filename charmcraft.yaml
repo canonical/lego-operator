@@ -94,6 +94,12 @@ config:
         DNS propagation timeout in seconds. How long to wait for DNS records to propagate before ACME verification attempts.
         Must be a positive integer. Useful in environments with slow DNS propagation or caching issues.
         If not set, LEGO's default timeout will be used.
+    dns-nameservers:
+      type: string
+      description: |
+        Comma-separated list of DNS nameserver addresses to use for DNS-01 challenge verification.
+        Can include ports (e.g., "8.8.8.8:53,8.8.4.4:53") or just IP addresses (port 53 assumed).
+        If not set, the system's default nameservers will be used.
 
     expiry_ratio:
       type: float

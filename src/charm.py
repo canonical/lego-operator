@@ -260,6 +260,7 @@ class LegoCharm(CharmBase):
             )
             env = base_env | http01_env
             dns_timeout = self._get_dns_propagation_timeout()
+            dns_nameservers = self._get_dns_nameservers()
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
@@ -268,6 +269,7 @@ class LegoCharm(CharmBase):
                 env=env,
                 plugin=plugin_to_use,
                 dns_propagation_wait=dns_timeout,
+                dns_nameservers=dns_nameservers,
             )
         except LEGOError as e:
             logger.error(
@@ -348,6 +350,8 @@ class LegoCharm(CharmBase):
             return err
         if err := self._validate_dns_propagation_timeout():
             return err
+        if err := self._validate_dns_nameservers():
+            return err
         if err := self._validate_expiry_ratio():
             return err
         return ""
@@ -421,6 +425,53 @@ class LegoCharm(CharmBase):
             return "dns-propagation-wait must be greater than 0"
 
         return ""
+
+    def _validate_dns_nameservers(self) -> str:
+        """Validate the dns-nameservers config option.
+
+        Returns:
+            str: Error message if invalid, otherwise an empty string.
+        """
+        nameservers = self.model.config.get("dns-nameservers", None)
+        if nameservers is None:
+            return ""
+
+        if not isinstance(nameservers, str):
+            return "dns-nameservers must be a string"
+
+        if not nameservers.strip():
+            return "dns-nameservers cannot be empty if provided"
+
+        # Basic validation of nameserver format
+        servers = [s.strip() for s in nameservers.split(",")]
+        for server in servers:
+            if not server:
+                return "dns-nameservers cannot contain empty entries"
+            # Basic IP:port or IP format validation
+            if ":" in server:
+                ip_part, port_part = server.rsplit(":", 1)
+                try:
+                    port = int(port_part)
+                    if not (1 <= port <= 65535):
+                        return f"Invalid port {port} in dns-nameservers"
+                except ValueError:
+                    return f"Invalid port format in dns-nameserver: {server}"
+
+        return ""
+
+    def _get_dns_nameservers(self) -> list[str] | None:
+        """Get the dns-nameservers config option.
+
+        Returns:
+            list[str] | None: List of nameserver addresses, or None if not set.
+        """
+        nameservers = self.model.config.get("dns-nameservers", None)
+        if not self._validate_dns_nameservers() == "" or not isinstance(nameservers, str):
+            return None
+        if nameservers is None:
+            return None
+
+        return [s.strip() for s in nameservers.split(",") if s.strip()]
 
     def _get_or_create_acme_account_private_key(self) -> str:
         """Get the private key if it exists, create it and store it if it doesn't.

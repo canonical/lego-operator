@@ -82,6 +82,7 @@ class TestLegoOperatorCharmConfigure:
                 "plugin": "namecheap",
                 "plugin-config-secret-id": "1",
                 "dns-propagation-wait": 600,
+                "dns-nameservers": "8.8.8.8,8.8.4.4",
             },
             relations=[
                 Relation(endpoint=CERTIFICATES_RELATION_NAME),
@@ -98,6 +99,7 @@ class TestLegoOperatorCharmConfigure:
             env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
             plugin="namecheap",
             dns_propagation_wait=600,
+            dns_nameservers=["8.8.8.8", "8.8.4.4"],
         )
         mock_set_relation_certificate.assert_called_with(
             provider_certificate=ProviderCertificate(
@@ -157,6 +159,7 @@ class TestLegoOperatorCharmConfigure:
             env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
             plugin="namecheap",
             dns_propagation_wait=None,
+            dns_nameservers=None,
         )
         assert not mock_set_relation_certificate.called
 
@@ -229,6 +232,7 @@ class TestLegoOperatorCharmConfigure:
             },
             plugin="namecheap",
             dns_propagation_wait=None,
+            dns_nameservers=None,
         )
 
     @patch("charm.run_lego_command")
