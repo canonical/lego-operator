@@ -5,7 +5,7 @@ environment:
   CHARMCRAFT_CHANNEL: latest/stable
   JUJU_CHANNEL: 3/stable
   LXD_CHANNEL: latest/stable
-  MICROK8S_CHANNEL: 1.28-strict/stable
+  MICROK8S_CHANNEL: 1.35-strict/stable
   MICROK8S_ADDONS: hostpath-storage
 
   JUJU_BOOTSTRAP_OPTIONS: --model-default test-mode=true --model-default automatically-retry-hooks=false --model-default
