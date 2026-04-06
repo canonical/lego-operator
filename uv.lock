@@ -641,11 +641,11 @@ wheels = [
 
 [[package]]
 name = "pylego"
-version = "0.1.40"
+version = "0.1.41"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e1/fe/60517bf2b8a01923871efcd31b2577da5b397e20bed5bdaf1635b754ac32/pylego-0.1.40.tar.gz", hash = "sha256:f6b22b3976da5504d04309d4c852544bd222dc9bc673d98b6d6a035b3465f1c4", size = 77625, upload-time = "2026-04-06T02:52:01.955Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/97/c0/0cc3fe4ce2d5b16695348bd82cfbe3e285f2237c2c883450a30afbe218b9/pylego-0.1.41.tar.gz", hash = "sha256:10d0cd202f45569dbbf5f334064fcc3365dc7d664a45b36bf0287d7a2071244f", size = 73544, upload-time = "2026-04-06T14:49:43.211Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/68/08/dbe79112ca89a7cfa832b955c7f8ab0d1276c5249c6ad2bf91d3321eed41/pylego-0.1.40-py3-none-any.whl", hash = "sha256:65bbf35398575a2c5d464c5464095f3c388cf7e297b7b09f226009d07afda16d", size = 34781570, upload-time = "2026-04-06T02:51:59.515Z" },
+    { url = "https://files.pythonhosted.org/packages/03/1e/7c1b5618f8da5f3b536bf9098699f42038c14a1655ce932746b8d4042c92/pylego-0.1.41-py3-none-any.whl", hash = "sha256:e47495d8fd3dea7c582d439b332d8588dacf2cb697a75408b78eed921021601e", size = 34795665, upload-time = "2026-04-06T14:49:40.385Z" },
 ]
 
 [[package]]
