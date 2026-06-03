@@ -95,16 +95,16 @@ wheels = [
 
 [[package]]
 name = "charmlibs-interfaces-tls-certificates"
-version = "1.8.1"
+version = "1.8.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "ops" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/78/7e/166af1e71f2bf96482845a1806dc345cbc5507134a99ccbbae297f174e4b/charmlibs_interfaces_tls_certificates-1.8.1.tar.gz", hash = "sha256:f2bfabf3a3b4c18034941771733177b30e4742c06d7742d4bb30da6ead953f43", size = 148059, upload-time = "2026-02-27T13:46:50.086Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e9/cc/7b5e3c1267ec0a8b75d632f2d8c66864169a123a04a2b7f702aca8390756/charmlibs_interfaces_tls_certificates-1.8.2.tar.gz", hash = "sha256:af7c6f0b5320d97a745df7e666cf6b24a32c86861a2076ae78da5a3e76b64eb4", size = 110169, upload-time = "2026-06-03T11:53:00.745Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/17/1d1b0083800f4cc20f42e5d2763521d93975376499565c62da5276a80629/charmlibs_interfaces_tls_certificates-1.8.1-py3-none-any.whl", hash = "sha256:8e8fe047e02515d76f57a1d019056d72ce8c859c2ffb39a1e379cfc11fc048e6", size = 28208, upload-time = "2026-02-27T13:46:48.959Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/89/d2a8511def158d0d8bcae9a899f8ab8abd6b4921f3696038044c9a16eef1/charmlibs_interfaces_tls_certificates-1.8.2-py3-none-any.whl", hash = "sha256:7783db7924e9f94dbcfddbe21519f98c91a60e3603684b1f3efe5be8e88affdb", size = 28280, upload-time = "2026-06-03T11:52:59.639Z" },
 ]
 
 [[package]]
