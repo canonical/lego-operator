@@ -375,3 +375,41 @@ class TestLegoOperatorCharmCollectStatus:
         assert out.unit_status == ActiveStatus(
             "1/2 certificate requests are fulfilled. please monitor logs for any errors"
         )
+
+    def test_given_eab_secret_with_only_kid_when_collect_status_then_status_is_blocked(self):
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1"),
+                Secret({"eab-kid": "my-kid-123"}, id="2"),
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+                "eab-secret-id": "2",
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == BlockedStatus(
+            "eab-secret-id secret must contain both 'eab-kid' and 'eab-hmac'"
+        )
+
+    def test_given_eab_secret_with_both_keys_when_collect_status_then_status_is_active(self):
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1"),
+                Secret({"eab-kid": "my-kid-123", "eab-hmac": "bXktaG1hYy1rZXk"}, id="2"),
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+                "eab-secret-id": "2",
+            },
+        )
+        out = self.ctx.run(self.ctx.on.collect_unit_status(), state)
+        assert out.unit_status == ActiveStatus("0/0 certificate requests are fulfilled")

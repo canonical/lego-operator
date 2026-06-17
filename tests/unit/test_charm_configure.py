@@ -100,6 +100,8 @@ class TestLegoOperatorCharmConfigure:
             plugin="namecheap",
             dns_propagation_wait=600,
             dns_nameservers=["8.8.8.8", "8.8.4.4"],
+            eab_kid=None,
+            eab_hmac=None,
         )
         mock_set_relation_certificate.assert_called_with(
             provider_certificate=ProviderCertificate(
@@ -160,6 +162,8 @@ class TestLegoOperatorCharmConfigure:
             plugin="namecheap",
             dns_propagation_wait=None,
             dns_nameservers=None,
+            eab_kid=None,
+            eab_hmac=None,
         )
         assert not mock_set_relation_certificate.called
 
@@ -233,6 +237,8 @@ class TestLegoOperatorCharmConfigure:
             plugin="namecheap",
             dns_propagation_wait=None,
             dns_nameservers=None,
+            eab_kid=None,
+            eab_hmac=None,
         )
 
     @patch("charm.run_lego_command")
@@ -681,3 +687,68 @@ class TestLegoOperatorCharmConfigure:
 
         assert provider_error.error.code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
         assert provider_error.error.name == "SERVER_NOT_AVAILABLE"
+
+    @patch("charm.run_lego_command")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificate_errors")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
+    @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_certificate")
+    @patch("charm.generate_private_key")
+    def test_given_eab_secret_when_certificate_request_then_eab_credentials_passed_to_pylego(
+        self,
+        mock_generate_private_key: MagicMock,
+        mock_set_relation_certificate: MagicMock,
+        mock_get_certificate_requests: MagicMock,
+        mock_get_provider_certificate_errors: MagicMock,
+        mock_pylego: MagicMock,
+    ):
+        mock_get_provider_certificate_errors.return_value = []
+        mock_account_pk = generate_private_key()
+        mock_generate_private_key.return_value = mock_account_pk
+        csr_pk = generate_private_key()
+        csr = generate_csr(csr_pk, "foo.com")
+        issuer_pk = generate_private_key()
+        issuer = generate_ca(issuer_pk, common_name="ca", validity=timedelta(days=365))
+        cert = generate_certificate(csr, issuer, issuer_pk, validity=timedelta(days=365))
+
+        mock_get_certificate_requests.return_value = [
+            RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
+        ]
+        mock_pylego.return_value = LEGOResponse(
+            csr=str(csr),
+            private_key=str(generate_private_key()),
+            certificate=f"{str(cert)}\n{str(issuer)}",
+            issuer_certificate=str(issuer),
+            metadata=Metadata(stable_url="stable url", url="url", domain="domain.com"),
+        )
+
+        state = State(
+            leader=True,
+            secrets=[
+                Secret({"namecheap-api-key": "apikey123", "namecheap-api-user": "a"}, id="1"),
+                Secret({"eab-kid": "my-kid-123", "eab-hmac": "bXktaG1hYy1rZXk"}, id="2"),
+            ],
+            config={
+                "email": "example@email.com",
+                "server": "https://acme-v02.api.letsencrypt.org/directory",
+                "plugin": "namecheap",
+                "plugin-config-secret-id": "1",
+                "eab-secret-id": "2",
+            },
+            relations=[Relation(endpoint=CERTIFICATES_RELATION_NAME)],
+            unit_status=ActiveStatus(),  # type: ignore
+        )
+
+        self.ctx.run(self.ctx.on.update_status(), state)
+
+        mock_pylego.assert_called_with(
+            email="example@email.com",
+            private_key=str(mock_account_pk),
+            server="https://acme-v02.api.letsencrypt.org/directory",
+            csr=str(csr).encode(),
+            env={"NAMECHEAP_API_KEY": "apikey123", "NAMECHEAP_API_USER": "a"},
+            plugin="namecheap",
+            dns_propagation_wait=None,
+            dns_nameservers=None,
+            eab_kid="my-kid-123",
+            eab_hmac="bXktaG1hYy1rZXk",
+        )
