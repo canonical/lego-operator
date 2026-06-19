@@ -261,6 +261,7 @@ class LegoCharm(CharmBase):
             env = base_env | http01_env
             dns_timeout = self._get_dns_propagation_timeout()
             dns_nameservers = self._get_dns_nameservers()
+            eab_kid, eab_hmac = self._eab_credentials
             response = run_lego_command(
                 email=self._email or "",
                 private_key=private_key,
@@ -270,6 +271,8 @@ class LegoCharm(CharmBase):
                 plugin=plugin_to_use,
                 dns_propagation_wait=dns_timeout,
                 dns_nameservers=dns_nameservers,
+                eab_kid=eab_kid,
+                eab_hmac=eab_hmac,
             )
         except LEGOError as e:
             logger.error(
@@ -354,6 +357,15 @@ class LegoCharm(CharmBase):
             return err
         if err := self._validate_expiry_ratio():
             return err
+        if err := self._validate_eab_config():
+            return err
+        return ""
+
+    def _validate_eab_config(self) -> str:
+        """Validate that EAB kid and hmac are either both set or both absent."""
+        kid, hmac = self._eab_credentials
+        if (kid is None) != (hmac is None):
+            return "eab-secret-id secret must contain both 'eab-kid' and 'eab-hmac'"
         return ""
 
     def _validate_expiry_ratio(self) -> str:
@@ -592,6 +604,23 @@ class LegoCharm(CharmBase):
             logger.warning("unable to access the secret: %s", e)
             return {}
         return {key.upper().replace("-", "_"): value for key, value in plugin_config.items()}
+
+    @property
+    def _eab_credentials(self) -> tuple[str | None, str | None]:
+        """EAB key ID and HMAC from the dedicated EAB secret.
+
+        Returns:
+            tuple[str | None, str | None]: The EAB kid and hmac if present, (None, None) otherwise.
+        """
+        try:
+            eab_secret_id = str(self.model.config.get("eab-secret-id", ""))
+            if not eab_secret_id:
+                return None, None
+            eab_secret: Secret = self.model.get_secret(id=eab_secret_id)
+            content = eab_secret.get_content(refresh=True)
+        except (SecretNotFoundError, ModelError):
+            return None, None
+        return content.get("eab-kid"), content.get("eab-hmac")
 
     @property
     def _email(self) -> str | None:
