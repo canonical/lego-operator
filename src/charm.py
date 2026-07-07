@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Set
 from urllib.parse import urlparse
 
+from charmlibs.interfaces.certificate_transfer import (
+    CertificateTransferProvides,
+    CertificateTransferRequires,
+)
 from charmlibs.interfaces.tls_certificates import (
     Certificate,
     CertificateError,
@@ -22,10 +26,6 @@ from charmlibs.interfaces.tls_certificates import (
     ProviderCertificateError,
     TLSCertificatesProvidesV4,
     generate_private_key,
-)
-from charms.certificate_transfer_interface.v1.certificate_transfer import (
-    CertificateTransferProvides,
-    CertificateTransferRequires,
 )
 from charms.loki_k8s.v0.charm_logging import log_charm
 from charms.loki_k8s.v1.loki_push_api import LokiPushApiConsumer

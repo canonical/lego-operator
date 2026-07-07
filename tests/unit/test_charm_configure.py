@@ -26,7 +26,7 @@ from scenario import Context, Relation, Secret, State
 from charm import LegoCharm
 
 TLS_LIB_PATH = "charmlibs.interfaces.tls_certificates"
-CERT_TRANSFER_LIB_PATH = "charms.certificate_transfer_interface.v1.certificate_transfer"
+CERT_TRANSFER_LIB_PATH = "charmlibs.interfaces.certificate_transfer"
 CERTIFICATES_RELATION_NAME = "certificates"
 CA_TRANSFER_RELATION_NAME = "send-ca-cert"
 
