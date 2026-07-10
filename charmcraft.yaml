@@ -45,6 +45,14 @@ platforms:
   ubuntu@24.04:amd64:
   ubuntu@24.04:arm64:
 
+charm-libs:
+  - lib: loki_k8s.charm_logging
+    version: "0.3"
+  - lib: loki_k8s.loki_push_api
+    version: "1.21"
+  - lib: traefik_k8s.ingress
+    version: "2.19"
+
 parts:
   charm:
     source: .
