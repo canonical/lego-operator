@@ -258,7 +258,7 @@ class LegoCharm(CharmBase):
                 if self._acme_ca_certificates_env
                 else self._plugin_config | self._app_environment
             )
-            env = base_env | http01_env
+            env = base_env | http01_env | self._disable_cname_support_env
             dns_timeout = self._get_dns_propagation_timeout()
             dns_nameservers = self._get_dns_nameservers()
             eab_kid, eab_hmac = self._eab_credentials
@@ -647,6 +647,13 @@ class LegoCharm(CharmBase):
                 return {"LEGO_CA_CERTIFICATES": path}
         except OSError:
             return {}
+        return {}
+
+    @property
+    def _disable_cname_support_env(self) -> Dict[str, str]:
+        """LEGO_DISABLE_CNAME_SUPPORT environment variable to use with LEGO."""
+        if self.model.config.get("disable-cname-support", False):
+            return {"LEGO_DISABLE_CNAME_SUPPORT": "true"}
         return {}
 
     @property

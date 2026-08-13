@@ -118,6 +118,11 @@ config:
         Comma-separated list of DNS nameserver addresses to use for DNS-01 challenge verification.
         Can include ports (e.g., "8.8.8.8:53,8.8.4.4:53") or just IP addresses (port 53 assumed).
         If not set, the system's default nameservers will be used.
+    disable-cname-support:
+      type: boolean
+      default: false
+      description: |
+        Disable CNAME following during the DNS-01 pre-check.
 
     expiry_ratio:
       type: float
