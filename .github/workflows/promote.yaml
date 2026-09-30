@@ -26,7 +26,7 @@ env:
 jobs:
   scan:
     name: Secscan
-    uses: canonical/identity-credentials-workflows/.github/workflows/charm-secscan.yaml@v3.1.5
+    uses: canonical/identity-credentials-workflows/.github/workflows/charm-secscan.yaml@v3.1.6
     with:
       charm: lego
       # We have to compute the channel here again because we can't pass env variables to a reusable workflow
@@ -37,7 +37,7 @@ jobs:
 
   promote:
     name: Promote Charm
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: Promote Charm
