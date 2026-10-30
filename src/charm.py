@@ -275,11 +275,13 @@ class LegoCharm(CharmBase):
                 eab_hmac=eab_hmac,
             )
         except LEGOError as e:
-            logger.error(
-                "Error occurred while obtaining certificate for request %s, setting relation data.",
-                csr.raw,
-            )
             error_code = self._map_lego_error_to_certificate_error(e)
+            logger.error(
+                "Certificate issuance failed for relation %s: %s. "
+                "Detailed error information is available in the certificates relation data.",
+                relation_id,
+                error_code.name,
+            )
             self._tls_certificates.set_relation_error(
                 provider_error=ProviderCertificateError(
                     relation_id=relation_id,

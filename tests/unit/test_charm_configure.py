@@ -20,7 +20,7 @@ from charmlibs.interfaces.tls_certificates import (
 from ops import ActiveStatus
 from pylego import LEGOError, LEGOResponse
 from pylego.pylego import Metadata
-from pytest import fixture
+from pytest import LogCaptureFixture, fixture, mark
 from scenario import Context, Relation, Secret, State
 
 from charm import LegoCharm
@@ -734,18 +734,34 @@ class TestLegoOperatorCharmConfigure:
         assert provider_error.error.code == CertificateRequestErrorCode.DOMAIN_NOT_ALLOWED
         assert provider_error.error.name == "DOMAIN_NOT_ALLOWED"
 
+    @mark.parametrize(
+        ("error_type", "error_code", "detail_prefix", "expected_code"),
+        [
+            ("lego", "network_error", "Connection failed", "SERVER_NOT_AVAILABLE"),
+            ("acme", "rejectedIdentifier", "Domain rejected", "DOMAIN_NOT_ALLOWED"),
+            ("acme", "rejectedIdentifier", "IP address rejected", "IP_NOT_ALLOWED"),
+            ("acme", "rejectedIdentifier", "Wildcard rejected", "WILDCARD_NOT_ALLOWED"),
+            ("acme", "unknownError", "Unknown failure", "OTHER"),
+            ("sensitive-type", "sensitive-code", "Provider failure", "OTHER"),
+        ],
+    )
     @patch("charm.run_lego_command")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_certificate_requests")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.set_relation_error")
     @patch("charm.generate_private_key")
-    def test_given_network_error_when_certificate_request_then_server_not_available_error_set(
+    def test_given_lego_error_when_certificate_request_then_safe_error_logged_and_relation_set(
         self,
         mock_generate_private_key: MagicMock,
         mock_set_relation_error: MagicMock,
         mock_get_certificate_requests: MagicMock,
         mock_pylego: MagicMock,
+        caplog: LogCaptureFixture,
+        error_type: str,
+        error_code: str,
+        detail_prefix: str,
+        expected_code: str,
     ):
-        """Test that network errors are correctly mapped to SERVER_NOT_AVAILABLE."""
+        """Log a stable category without exposing request or upstream error contents."""
         mock_account_pk = generate_private_key()
         mock_generate_private_key.return_value = mock_account_pk
         csr_pk = generate_private_key()
@@ -755,10 +771,16 @@ class TestLegoOperatorCharmConfigure:
             RequirerCertificateRequest(relation_id=1, certificate_signing_request=csr, is_ca=False)
         ]
 
+        detail = (
+            f"{detail_prefix}: internal.example.com at 192.168.1.1 "
+            "https://user:password@internal.example.com/?token=secret-token"
+        )
+        acme_type = "urn:example:sensitive-error-type"
         mock_pylego.side_effect = LEGOError(
-            detail="dial tcp 127.0.0.1:443: connect: connection refused",
-            type="lego",
-            code="network_error",
+            detail=detail,
+            type=error_type,
+            code=error_code,
+            acme_type=acme_type,
         )
 
         state = State(
@@ -784,8 +806,39 @@ class TestLegoOperatorCharmConfigure:
         call_args = mock_set_relation_error.call_args[1]
         provider_error = call_args["provider_error"]
 
-        assert provider_error.error.code == CertificateRequestErrorCode.SERVER_NOT_AVAILABLE.value
-        assert provider_error.error.name == "SERVER_NOT_AVAILABLE"
+        assert provider_error.error.code == CertificateRequestErrorCode[expected_code].value
+        assert provider_error.error.name == expected_code
+        assert provider_error.error.message == detail
+        assert provider_error.error.reason == acme_type
+        assert provider_error.error.endpoint == state.config["server"]
+        assert provider_error.certificate_signing_request == csr
+        assert provider_error.relation_id == 1
+
+        error_records = [
+            record
+            for record in caplog.records
+            if record.name == "charm" and record.levelname == "ERROR"
+        ]
+        assert len(error_records) == 1
+        assert error_records[0].getMessage() == (
+            f"Certificate issuance failed for relation 1: {expected_code}. "
+            "Detailed error information is available in the certificates relation data."
+        )
+        for sensitive in (
+            csr.raw,
+            "BEGIN CERTIFICATE REQUEST",
+            detail,
+            acme_type,
+            "internal.example.com",
+            "192.168.1.1",
+            "password",
+            "secret-token",
+            "sensitive-type",
+            "sensitive-code",
+            "apikey123",
+            "https://acme-v02.api.letsencrypt.org/directory",
+        ):
+            assert sensitive not in caplog.text
 
     @patch("charm.run_lego_command")
     @patch(f"{TLS_LIB_PATH}.TLSCertificatesProvidesV4.get_provider_certificate_errors")
