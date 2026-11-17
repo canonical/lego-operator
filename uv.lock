@@ -411,7 +411,7 @@ requires-dist = [
     { name = "cryptography" },
     { name = "ops" },
     { name = "pydantic", specifier = "==2.14.3" },
-    { name = "pylego" },
+    { name = "pylego", specifier = ">=0.1.50" },
     { name = "rpds-py", specifier = "==0.30.0" },
 ]
 
@@ -685,11 +685,11 @@ wheels = [
 
 [[package]]
 name = "pylego"
-version = "0.1.45"
+version = "0.1.50"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/cc/f3/3779278a4bee2b54d07509a4ed312697a8068384cd0db6f09165756338c6/pylego-0.1.45.tar.gz", hash = "sha256:78aadeb9dfb35ea16b59eb9a8c1f7e2b537431b351e1c4e8eea761bec6548e14", size = 73939, upload-time = "2026-06-19T09:46:43.533Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6c/35/b562d36687cdcd5486e9172ba6e3300893c57efad210016ea9e03f060c36/pylego-0.1.50.tar.gz", hash = "sha256:08a9be7af19d0dce52b7737ed72d9290c28c6ddf6369cd1e161a787ec76a8da8", size = 115007, upload-time = "2026-11-17T14:00:02.298Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cd/c4/deb3c96be2ddb408fa3aba877329faebadf2129a50e704fc2dfbd60ce931/pylego-0.1.45-py3-none-any.whl", hash = "sha256:892c71a3e7e129bdb7e04868d01275d4beb07d1c611e6ae0ed5c5b4a19b4542f", size = 34796394, upload-time = "2026-06-19T09:46:41.423Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/83/2980e61e2a582aa82fd65490885701b9da97fa452dfab7049aa3b8816b00/pylego-0.1.50-py3-none-any.whl", hash = "sha256:264ccd9ecacbfba9cbeba78319eacc95074c9ae24b0626004a4610a5da81ab9e", size = 36576170, upload-time = "2026-11-17T14:00:00.063Z" },
 ]
 
 [[package]]

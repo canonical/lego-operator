@@ -10,7 +10,7 @@ dependencies = [
     "cryptography",
     "ops",
     "pydantic==2.14.3",
-    "pylego",
+    "pylego>=0.1.50",
     "rpds-py==0.30.0",
 ]
 
