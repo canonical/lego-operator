@@ -16,12 +16,13 @@ on:
         options:
           - ubuntu-22.04
           - ubuntu-24.04
+          - ubuntu-26.04
 
 env:
   PROMOTE_FROM: ${{ inputs.promotion == 'edge -> beta' && 'edge' || inputs.promotion == 'beta -> candidate' && 'beta' || inputs.promotion == 'candidate -> stable' && 'candidate' || '' }}
   PROMOTE_TO: ${{ inputs.promotion == 'edge -> beta' && 'beta' || inputs.promotion == 'beta -> candidate' && 'candidate' || inputs.promotion == 'candidate -> stable' && 'stable' || '' }}
   TRACK: "4" # This also needs to be updated in the scan job below
-  BASE_CHANNEL: ${{ inputs.base == 'ubuntu-22.04' && '22.04' || inputs.base == 'ubuntu-24.04' && '24.04' || '' }}
+  BASE_CHANNEL: ${{ inputs.base == 'ubuntu-22.04' && '22.04' || inputs.base == 'ubuntu-24.04' && '24.04' || inputs.base == 'ubuntu-26.04' && '26.04' || '' }}
 
 jobs:
   scan:
@@ -36,7 +37,7 @@ jobs:
       track: "4"
       channel: ${{ inputs.promotion == 'edge -> beta' && 'edge' || inputs.promotion == 'beta -> candidate' && 'beta' || inputs.promotion == 'candidate -> stable' && 'candidate' || '' }}
       arch: amd64
-      base: ${{ inputs.base == 'ubuntu-22.04' && 'ubuntu@22.04' || inputs.base == 'ubuntu-24.04' && 'ubuntu@24.04' || '' }}
+      base: ${{ inputs.base == 'ubuntu-22.04' && 'ubuntu@22.04' || inputs.base == 'ubuntu-24.04' && 'ubuntu@24.04' || inputs.base == 'ubuntu-26.04' && 'ubuntu@26.04' || '' }}
       create-issue: ${{ inputs.promotion == 'candidate -> stable' || inputs.promotion == 'beta -> candidate' }}
       fail-on-cve: ${{ inputs.promotion != 'edge -> beta' }}
 
