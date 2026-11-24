@@ -23,6 +23,9 @@ jobs:
           - arch: amd64
             runner: ubuntu-24.04
             base: "24.04"
+          - arch: amd64
+            runner: ubuntu-26.04
+            base: "26.04"
 
     runs-on: ${{ matrix.arch.runner }}
     steps:
